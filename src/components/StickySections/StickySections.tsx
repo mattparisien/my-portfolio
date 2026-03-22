@@ -1,34 +1,8 @@
 'use client';
 import { MediaItem } from "@/app/page";
 import classNames from "classnames";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PALETTE } from "@/app/constants";
-import { useScrollHeight } from "@/app/hooks/useScrollHeight";
-
-gsap.registerPlugin(ScrollTrigger);
-
-// Function to darken a hex color
-function darkenHexColor(hex: string, percent: number = 30): string {
-    // Remove # if present
-    hex = hex.replace('#', '');
-
-    // Parse RGB values
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-
-    // Darken by reducing each component
-    const factor = (100 - percent) / 100;
-    const newR = Math.round(r * factor);
-    const newG = Math.round(g * factor);
-    const newB = Math.round(b * factor);
-
-    // Convert back to hex
-    const toHex = (n: number) => n.toString(16).padStart(2, '0');
-    return `#${toHex(newR)}${toHex(newG)}${toHex(newB)}`;
-}
 
 interface MediaGridProps {
     items: MediaGridItem[];
@@ -51,26 +25,30 @@ export type MediaGridItem = MediaItem & {
 
 const StickySections = ({ items }: MediaGridProps) => {
     const [visibleRange, setVisibleRange] = useState({ start: 0, end: 6 });
-    const [currentSection, setCurrentSection] = useState(0);
 
-    const sectionRefs = useRef<React.RefObject<HTMLDivElement>[]>([]);
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
-    const scrollHeight = useScrollHeight();
-
-    const addToRefs = (el: HTMLDivElement | null) => {
-        if (el) {
-            const ref = { current: el };
-            if (!sectionRefs.current.find(r => r.current === el)) {
-                sectionRefs.current.push(ref);
-            }
-        }
-    }
 
     const currentSectionRef = useRef(0);
 
     useEffect(() => {
         let ticking = false;
+
+        const syncVideoPlayback = (scrollY: number, viewportHeight: number) => {
+            videoRefs.current.forEach((video, index) => {
+                const sectionStart = (index + 1) * viewportHeight;
+                const playStart = sectionStart - viewportHeight;
+                const playEnd = sectionStart + viewportHeight;
+                const shouldPlay = scrollY >= playStart && scrollY < playEnd;
+
+                if (shouldPlay) {
+                    video.play().catch(() => {});
+                    return;
+                }
+
+                video.pause();
+            });
+        };
+
         const onScroll = () => {
             if (ticking) return;
             ticking = true;
@@ -98,21 +76,12 @@ const StickySections = ({ items }: MediaGridProps) => {
                     }
                 }
 
+                syncVideoPlayback(scrollY, vh);
                 setVisibleRange({ start, end });
 
-                // Only update state + play/pause when section actually changes
+                // Only update state when the section pinned at the top changes.
                 if (current !== currentSectionRef.current) {
                     currentSectionRef.current = current;
-                    setCurrentSection(current);
-
-                    // Drive video play/pause directly — don't wait for React state cycle
-                    videoRefs.current.forEach((video, index) => {
-                        if (index === current) {
-                            video.play().catch(() => {});
-                        } else {
-                            video.pause();
-                        }
-                    });
                 }
 
                 ticking = false;
@@ -127,28 +96,8 @@ const StickySections = ({ items }: MediaGridProps) => {
         };
     }, [items]);
 
-    useEffect(() => {
-        // Play initial video on mount (refs are set by now)
-        videoRefs.current.forEach((video, index) => {
-            if (index === currentSectionRef.current) {
-                video.play().catch(() => {});
-            } else {
-                video.pause();
-            }
-        });
-    }, []);
-
-    const ctx = useMemo(() => {
-        return items[currentSection -1 || 0]?.meta?.context || null;
-    }, [items,currentSection]);
-
-    const textColor = useMemo(() => {
-
-    }, [items, currentSection])
-
     return <div
         className="pointer-events-none"
-        ref={scrollContainerRef}
     >
         {/* <div className="fixed top-0 left-0 z-[999] text-4xl p-4" >{ctx}</div> */}
         <div className="relative top-0 left-0 w-screen">
@@ -177,7 +126,6 @@ const StickySections = ({ items }: MediaGridProps) => {
                     <div
                         key={actualIndex}
                         className="sticky left-0 top-0 w-screen h-screen flex items-center justify-center rounded-t-xl pointer-events-auto relative"
-                        ref={addToRefs}
                         style={{
                             backgroundColor: bgColor,
                             zIndex: actualIndex,

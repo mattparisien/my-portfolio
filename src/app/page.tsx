@@ -129,9 +129,3 @@ export default function Home() {
   );
 }
 
-
-const Button = ({ children, href }: { children: React.ReactNode, href: string }) => {
-  return <a href={href} target="_blank" rel="noopener noreferrer" className='underline decoration-1 sm:decoration-2 underline-offset-3 cursor-pointer'>
-    {children}
-  </a>
-}
