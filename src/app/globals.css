@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+@theme  {
+  --font-heading: 'Pantasia', serif;
+
+}
+
+@font-face {
+  font-family: 'Freigeist';
+  src: url('/assets/fonts/ItemsTextTrial-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Freigeist';
+  src: url('/assets/fonts/ItemsTextTrial-Medium.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Pantasia';
+  src: url('/assets/fonts/PantasiaNTXT-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+@font-face {
+  font-family: 'Rhymes';
+  src: url('/assets/fonts/Rhymes-Text-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Freigeist';
+  src: url('/assets/fonts/ItemsTextTrial-Book.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+body {
+  background: #ffffff;
+  color: #000000;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+}
+
+@keyframes fadeInSlide {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Color palette for letter animations */
+:root {
+  --color-1: #EE4E2B;
+  --color-2: #F3BE21;
+  --color-3: #009563;
+  --color-4: #F7D9D3;
+  --color-5: #5266AB;
+}
+
+.font-serif {
+    font-family: 'Rhymes', serif !important;
+
+}
+
+.zigzag-button .letter-animate {
+  color: inherit;
+}
+
+.zigzag-button:hover {
+  background-image: none !important;
+}
+
+.zigzag-button:hover .letter-animate:nth-child(5n+1) {
+  color: var(--color-1);
+  animation: colorCycle1 2s infinite steps(5, end);
+  animation-delay: calc(var(--letter-index) * 0.1s);
+}
+
+.zigzag-button:hover .letter-animate:nth-child(5n+2) {
+  color: var(--color-2);
+  animation: colorCycle2 2s infinite steps(5, end);
+  animation-delay: calc(var(--letter-index) * 0.1s);
+}
+
+.zigzag-button:hover .letter-animate:nth-child(5n+3) {
+  color: var(--color-3);
+  animation: colorCycle3 2s infinite steps(5, end);
+  animation-delay: calc(var(--letter-index) * 0.1s);
+}
+
+.zigzag-button:hover .letter-animate:nth-child(5n+4) {
+  color: var(--color-4);
+  animation: colorCycle4 2s infinite steps(5, end);
+  animation-delay: calc(var(--letter-index) * 0.1s);
+}
+
+.zigzag-button:hover .letter-animate:nth-child(5n+5) {
+  color: var(--color-5);
+  animation: colorCycle5 2s infinite steps(5, end);
+  animation-delay: calc(var(--letter-index) * 0.1s);
+}
+
+@keyframes colorCycle1 {
+  0% { color: var(--color-1); }
+  20% { color: var(--color-2); }
+  40% { color: var(--color-3); }
+  60% { color: var(--color-4); }
+  80% { color: var(--color-5); }
+  100% { color: var(--color-1); }
+}
+
+@keyframes colorCycle2 {
+  0% { color: var(--color-2); }
+  20% { color: var(--color-3); }
+  40% { color: var(--color-4); }
+  60% { color: var(--color-5); }
+  80% { color: var(--color-1); }
+  100% { color: var(--color-2); }
+}
+
+@keyframes colorCycle3 {
+  0% { color: var(--color-3); }
+  20% { color: var(--color-4); }
+  40% { color: var(--color-5); }
+  60% { color: var(--color-1); }
+  80% { color: var(--color-2); }
+  100% { color: var(--color-3); }
+}
+
+@keyframes colorCycle4 {
+  0% { color: var(--color-4); }
+  20% { color: var(--color-5); }
+  40% { color: var(--color-1); }
+  60% { color: var(--color-2); }
+  80% { color: var(--color-3); }
+  100% { color: var(--color-4); }
+}
+
+@keyframes colorCycle5 {
+  0% { color: var(--color-5); }
+  20% { color: var(--color-1); }
+  40% { color: var(--color-2); }
+  60% { color: var(--color-3); }
+  80% { color: var(--color-4); }
+  100% { color: var(--color-5); }
+}
+
+/* Responsive: hide zigzag on small viewports */
+@media (max-width: 640px) {
+  .zigzag-button {
+    background-image: none !important;
+    padding-bottom: 0 !important;
+    background-size: 0 0 !important;
+  }
+}
