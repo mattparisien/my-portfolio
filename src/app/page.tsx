@@ -98,7 +98,7 @@ export default function Home() {
             className="font-heading text-black text-4xl sm:text-6xl lg:text-7xl leading-[1.1] font-light"
           >
             <div className="flex flex-col justify-between">
-              <div className='flex justify-between pb-10'><div>Matt Parisien</div> <div>(1997   )<div className='w-20'></div></div></div>
+              <div className='flex justify-between pb-10'><div>Matthew Parisien</div> <div>(1997   )<div className='w-20'></div></div></div>
               <div>Software developer and visual artist blending technical and creative thinking. Currently in data engineering at Innocap and represented by <a href="https://www.creamworldwide.com/" target="_blank" className="underline decoration-2 underline-offset-5 hover:no-underline">Cream Creators</a>. Scroll to see creative work.</div>
             </div>
           </h2>
