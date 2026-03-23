@@ -95,16 +95,16 @@ export default function Home() {
       >
         <div className="flex flex-col justify-between items-start w-screen h-[100dvh] fixed top-0 left-0 sm:px-8 sm:py-5 px-4 py-3 bg-yellow-300">
           <h2
-            className="font-heading text-black text-4xl sm:text-6xl lg:text-7xl leading-[1.1] font-light"
+            className="font-heading text-black text-4xl sm:text-5xl lg:text-7xl leading-[1.1] font-light"
           >
             <div className="flex flex-col justify-between">
-              <div className='flex justify-between pb-10'><div>Matthew Parisien</div> <div>(1997   )<div className='w-20'></div></div></div>
+              <div className='flex justify-between pb-10'><div>Matthew Parisien</div> <div>(1997)<div className='w-20'></div></div></div>
               <div>Software developer and visual artist blending technical and creative thinking. Currently in data engineering at Innocap and represented by <a href="https://www.creamworldwide.com/" target="_blank" className="underline decoration-2 underline-offset-5 hover:no-underline">Cream Creators</a>. Scroll to see creative work.</div>
             </div>
           </h2>
-          <div className='flex items-center justify-between w-full [&>a]:cursor-pointer [&>a]:decoration-[2px] [&>a]:decoration-black [&>a]:underline-offset-2 [&>a]:hover:underline' style={{ ...styles, fontWeight: 400 }} >
-            <div className='text-sm sm:text-lg md:text-xl font-serif'>Matthew Parisien *</div>
-            <a className='text-sm sm:text-lg text-lg md:text-xl font-serif' href='mailto:matthewparisien4@gmail.com'>matthewparisien4@gmail.com</a>
+          <div className='flex items-center justify-between w-full' style={{ ...styles, fontWeight: 400 }} >
+            <div className='text-md sm:text-lg md:text-xl font-serif'>Matthew Parisien</div>
+            <a className='text-md sm:text-lg md:text-xl font-serif underline decoration-1 underline-offset-3 hover:!no-underline' href='mailto:matthewparisien4@gmail.com'>matthewparisien4@gmail.com</a>
           </div>
         </div>
         {/* <Intro items={media} /> */}
