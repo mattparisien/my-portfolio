@@ -95,11 +95,11 @@ export default function Home() {
       >
         <div className="flex flex-col justify-between items-start w-screen h-[100dvh] fixed top-0 left-0 sm:px-8 sm:py-5 px-4 py-3 bg-yellow-300">
           <h2
-            className="font-heading text-black text-4xl sm:text-5xl lg:text-7xl leading-[1.1] font-light"
+            className="font-heading text-black text-4xl sm:text-5xl lg:text-6xl xl:text-7xl leading-[1.1] font-light"
           >
             <div className="flex flex-col justify-between">
               <div className='flex justify-between pb-10'><div>Matthew Parisien</div> <div>(1997)<div className='w-20'></div></div></div>
-              <div>Software developer and visual artist blending technical and creative thinking. Currently in data engineering at Innocap and represented by <a href="https://www.creamworldwide.com/" target="_blank" className="underline decoration-2 underline-offset-5 hover:no-underline">Cream Creators</a>. Scroll to see creative work.</div>
+              <div>Montreal-based software developer and visual artist blending technical and creative thinking. Currently in data engineering at Innocap and represented by <a href="https://www.creamworldwide.com/" target="_blank" className="underline decoration-2 underline-offset-5 hover:no-underline">Cream Creators</a>. Scroll to see creative work.</div>
             </div>
           </h2>
           <div className='flex items-center justify-between w-full' style={{ ...styles, fontWeight: 400 }} >
