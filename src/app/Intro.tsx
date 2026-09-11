@@ -240,10 +240,22 @@ const Intro = (props: IntroProps) => {
     useEffect(() => {
         if (isReady && itemRefs.current && itemRefs.current.length > 0) {
             // Set intro positions
-            setIntroPositions(itemRefs.current);
+
+            const inViewRefs = itemRefs.current.filter(item => {
+                const rect = item.getBoundingClientRect();
+                return (
+                    rect.top < (window.innerHeight + (window.innerHeight / 2))
+                );
+            });
+
+            const invisibleRefs = itemRefs.current.filter(item => !inViewRefs.includes(item));
+
+            gsap.set(invisibleRefs, { opacity: 1, x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY });
+            setIntroPositions(inViewRefs);
+
             const tl = gsap.timeline();
-            tl.to(itemRefs.current, { opacity: 1, stagger: 0.1, ease: "none", duration: 0})
-                .to(itemRefs.current, { x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY, ease: "power3.out", duration: 1, stagger: 0.01 })
+            tl.to(inViewRefs, { opacity: 1, stagger: 0.1, ease: "none", duration: 0 })
+                .to(inViewRefs, { x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY, ease: "power3.out", duration: 1, stagger: 0.01 })
 
 
 
@@ -255,7 +267,7 @@ const Intro = (props: IntroProps) => {
 
 
     return (
-        <div className="z-10 bg-white w-screen min-h-screen overflow-hidden">
+        <div className="z-20 block bg-white w-screen min-h-screen overflow-hidden">
             <div className="relative w-full h-full">
                 <div className="grid w-full h-full flex flex-col">
                     {gridItems.map((row, ri) => (

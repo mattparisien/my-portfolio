@@ -97,6 +97,7 @@ export default function Home() {
         }]} /> */}
         {/* {media.length > 0 && <StickySections items={media} isActive={false} />} */}
         {media.length > 0 && <Intro items={media} />}
+        <div className="text-[5vw] font-sans fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 font-medium opacity-30">Matthew Parisien</div>
       </main >
 
 
