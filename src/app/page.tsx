@@ -43,7 +43,7 @@ export default function Home() {
         const data = await response.json();
         const mediaItems = data.media || [];
 
-        setMedia(shuffle(mediaItems, 125) as MediaGridItem[]);
+        setMedia(shuffle(mediaItems, 10) as MediaGridItem[]);
       } catch (error) {
         console.error('Error fetching Cloudinary media:', error);
         setMedia([]);
@@ -97,7 +97,7 @@ export default function Home() {
         }]} /> */}
         {/* {media.length > 0 && <StickySections items={media} isActive={false} />} */}
         {media.length > 0 && <Intro items={media} />}
-        <div className="text-[5vw] font-sans fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 font-medium opacity-30">Matthew Parisien</div>
+        {/* <div className="text-[5vw] font-sans fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 font-medium opacity-30">Matthew Parisien</div> */}
       </main >
 
 

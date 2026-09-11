@@ -47,7 +47,6 @@ export async function GET() {
     const media: MediaItem[] = await Promise.all(
       objects
         .filter((obj) => obj.Key && (IMAGE_RE.test(obj.Key) || VIDEO_RE.test(obj.Key)))
-        .slice(0, 50)
         .map(async (obj) => {
           const key = obj.Key!;
           const url = `${process.env.CLOUDFLARE_R2_PUBLIC_URL}/${key}`;
