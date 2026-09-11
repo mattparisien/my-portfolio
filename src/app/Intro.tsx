@@ -200,7 +200,7 @@ const Intro = (props: IntroProps) => {
 
 
     useEffect(() => {
-        const cellSizePx = Math.round(windowWidth / 5);
+        const cellSizePx = Math.round(windowWidth / 6);
 
         setGrid((prev) => {
             if (prev.cellSizePx === cellSizePx) return prev;
@@ -271,7 +271,7 @@ const Intro = (props: IntroProps) => {
             <div className="relative w-full h-full">
                 <div className="grid w-full h-full flex flex-col">
                     {gridItems.map((row, ri) => (
-                        <div className="row flex" key={ri}>
+                        <div className="row flex justify-between" key={ri}>
                             {row?.map((cell, ci) => {
                                 const imageFrameSize = getImageFrameSize(cell?.item ?? null, grid.cellSizePx);
                                 const introPosition = getIntroPosition(cell?.id as string);
@@ -292,9 +292,6 @@ const Intro = (props: IntroProps) => {
                                                 width: `${imageFrameSize.width}px`,
                                                 height: `${imageFrameSize.height}px`,
                                                 opacity: 0
-                                                // animation: isIntroReady ? `introReveal 0ms ease-out forwards` : 'none',
-                                                // animationDelay: isReady ? `${ci * 200}ms` : '0ms',
-                                                // transform: `translate(${x}px, ${y}px)`,
                                             }}
                                             ref={self => addToRefs(self)}
                                             data-item-id={cell?.id}
