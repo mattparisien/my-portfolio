@@ -1,10 +1,11 @@
 'use client';
+import Image from "next/image";
 import { MediaItem } from "@/app/page";
 import classNames from "classnames";
 import { useEffect, useRef, useState } from "react";
 import { PALETTE } from "@/app/constants";
 
-interface MediaGridProps {
+export interface MediaGridProps {
     items: MediaGridItem[];
     isActive: boolean;
 }
@@ -135,6 +136,7 @@ const StickySections = ({ items }: MediaGridProps) => {
                             <div className={classNames("rounded-md overflow-hidden inline-flex", {
                                 "w-full h-full": item.meta?.isFullScreen == "true",
                             })} style={{
+                                position: "relative",
                                 width: item.meta?.isFullScreen === "true" ? "100%" : "auto",
                                 height: item.meta?.isFullScreen === "true" ? "100%" : "auto",
                                 maxWidth: item.meta?.isFullScreen === "true" ? "100%" : '90vw',
@@ -167,21 +169,19 @@ const StickySections = ({ items }: MediaGridProps) => {
                                         }}
                                     />
                                 ) : (
-                                    <img
+                                    <Image
                                         src={item.url}
-                                        className={classNames({
-                                            "w-full h-full object-cover": item.meta?.isFullScreen == "true",
-                                        })}
                                         alt=""
-                                        loading={actualIndex < 3 ? "eager" : "lazy"}
-                                        decoding="async"
+                                        fill
+                                        priority={actualIndex < 3}
+                                        sizes={item.meta?.isFullScreen === "true" ? "100vw" : "90vw"}
+                                        className={classNames({
+                                            "object-cover": item.meta?.isFullScreen == "true",
+                                            "object-contain": item.meta?.isFullScreen !== "true",
+                                        })}
                                         style={{
                                             backfaceVisibility: "hidden",
                                             transform: "translateZ(0)",
-                                            maxWidth: item.meta?.isFullScreen === "true" ? "100%" : "90vw",
-                                            maxHeight: item.meta?.isFullScreen === "true" ? "100%" : "90vh",
-                                            width: item.meta?.isFullScreen === "true" ? "100%" : "auto",
-                                            height: item.meta?.isFullScreen === "true" ? "100%" : "auto"
                                         }}
                                     />
                                 )}

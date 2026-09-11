@@ -1,7 +1,7 @@
 "use client"
-import DraggableOverlay from '@/components/DraggableOverlay/DraggableOverlay';
-import StickySections, { MediaGridItem } from '@/components/StickySections/StickySections';
+import { MediaGridItem } from '@/components/StickySections/StickySections';
 import { useEffect, useState } from 'react';
+import Intro from './Intro';
 
 export interface MediaItem {
   url: string;
@@ -36,47 +36,21 @@ export default function Home() {
 
   // Fetch and preload media from Cloudinary folder
   useEffect(() => {
-    const fetchAndPreloadMedia = async () => {
+ 
+    const fetchMedia = async () => {
       try {
         const response = await fetch('/api/cloudinary-images');
         const data = await response.json();
         const mediaItems = data.media || [];
 
-        // Set media state first
-        setMedia(shuffle(mediaItems, 125) as MediaGridItem[]); // Shuffle with fixed seed for consistent order
-
-        // Preload all media in background
-        const preloadPromises = mediaItems.map((item: MediaGridItem) => {
-          return new Promise((resolve, reject) => {
-            if (item.type === 'image') {
-              const img = new Image();
-              img.onload = () => resolve(item.url);
-              img.onerror = () => reject(new Error(`Failed to load ${item.url}`));
-              img.src = item.url;
-            } else if (item.type === 'video') {
-              const video = document.createElement('video');
-              video.onloadeddata = () => resolve(item.url);
-              video.onerror = () => reject(new Error(`Failed to load ${item.url}`));
-              video.src = item.url;
-              video.preload = 'metadata';
-            } else {
-              resolve(item.url);
-            }
-          });
-        });
-
-        // Wait for all media to preload
-        await Promise.allSettled(preloadPromises);
-        console.log('All gallery media preloaded successfully');
-
+        setMedia(shuffle(mediaItems, 125) as MediaGridItem[]);
       } catch (error) {
         console.error('Error fetching Cloudinary media:', error);
-        // Fallback to empty array if fetch fails
         setMedia([]);
       }
     };
 
-    fetchAndPreloadMedia();
+    fetchMedia();
   }, []);
 
   const styles = {
@@ -93,10 +67,10 @@ export default function Home() {
         } as React.CSSProperties}
         data-scroll-container
       >
-        <div className="flex flex-col justify-between items-start w-screen h-[100dvh] fixed top-0 left-0 sm:px-8 sm:py-5 px-4 py-3 bg-yellow-300">
+        {/* <div className="flex flex-col justify-between items-start w-screen fixed top-0 left-0 sm:px-8 sm:py-5 px-4 py-3 bg-yellow-300">
           <h2
             className="font-heading text-black text-4xl sm:text-5xl lg:text-6xl xl:text-7xl leading-[1.1] font-light"
-          > 
+          >
             <div className="flex flex-col justify-between">
               <div className='flex justify-between pb-10'><div>Matthew Parisien</div> <div>(1997)<div className='w-20'></div></div></div>
               <div>Montreal-based software developer and visual artist blending technical and creative thinking. Currently in data engineering at Innocap and represented by <a href="https://www.creamworldwide.com/" target="_blank" className="underline decoration-2 underline-offset-5 hover:no-underline">Cream Creators</a>. Scroll to see creative work.</div>
@@ -106,7 +80,7 @@ export default function Home() {
             <div className='text-md sm:text-lg md:text-xl font-serif'>Matthew Parisien</div>
             <a className='text-md sm:text-lg md:text-xl font-serif underline decoration-1 underline-offset-3 hover:!no-underline' href='mailto:matthewparisien4@gmail.com'>matthewparisien4@gmail.com</a>
           </div>
-        </div>
+        </div> */}
         {/* <Intro items={media} /> */}
         {/* <DraggableOverlay items={[{
           url: "https://imagedelivery.net/Ti1_uXa4Q9gNync1g-YdPA/fcb1630d-777f-4499-7716-05e2ca754000/public",
@@ -121,7 +95,8 @@ export default function Home() {
           height: 701,
           aspectRatio: 683 / 701
         }]} /> */}
-        {media.length > 0 && <StickySections items={media} isActive={false} />}
+        {/* {media.length > 0 && <StickySections items={media} isActive={false} />} */}
+        {media.length > 0 && <Intro items={media} />}
       </main >
 
 

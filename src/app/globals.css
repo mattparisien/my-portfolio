@@ -71,6 +71,15 @@ body {
   }
 }
 
+@keyframes introReveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Color palette for letter animations */
 :root {
   --color-1: #EE4E2B;

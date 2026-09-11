@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import sizeOf from "image-size";
-import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, ListObjectsV2Command, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 /* -----------------------------
    Cloudflare R2 (S3-compatible)
@@ -34,7 +33,6 @@ type MediaItem = {
 -------------------------------- */
 export async function GET() {
   try {
-    /* List all objects under the portfolio/ prefix */
     const listCommand = new ListObjectsV2Command({
       Bucket: BUCKET,
       Prefix: `${FOLDER}/`,
@@ -48,46 +46,36 @@ export async function GET() {
 
     const media: MediaItem[] = await Promise.all(
       objects
-        .filter(obj => obj.Key && (IMAGE_RE.test(obj.Key) || VIDEO_RE.test(obj.Key)))
+        .filter((obj) => obj.Key && (IMAGE_RE.test(obj.Key) || VIDEO_RE.test(obj.Key)))
+        .slice(0, 50)
         .map(async (obj) => {
-          const url = `${process.env.CLOUDFLARE_R2_PUBLIC_URL}/${obj.Key}`;
-          const isVideo = VIDEO_RE.test(obj.Key!);
+          const key = obj.Key!;
+          const url = `${process.env.CLOUDFLARE_R2_PUBLIC_URL}/${key}`;
+          const isVideo = VIDEO_RE.test(key);
 
-          if (isVideo) {
-            return {
-              url,
-              type: "video" as const,
-              width: 1920,
-              height: 1080,
-              aspectRatio: 16 / 9,
-            };
-          }
+          let width: number | null = null;
+          let height: number | null = null;
 
-          // Image — attempt to resolve dimensions
           try {
-            const res = await fetch(url);
-            const buffer = Buffer.from(await res.arrayBuffer());
-            const dimensions = sizeOf(buffer);
+            const head = await r2.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
 
-            return {
-              url,
-              type: "image" as const,
-              width: dimensions.width ?? null,
-              height: dimensions.height ?? null,
-              aspectRatio:
-                dimensions.width && dimensions.height
-                  ? dimensions.width / dimensions.height
-                  : null,
-            };
-          } catch {
-            return {
-              url,
-              type: "image" as const,
-              width: null,
-              height: null,
-              aspectRatio: null,
-            };
+            width = head.Metadata?.width ? parseInt(head.Metadata.width, 10) : null;
+            height = head.Metadata?.height ? parseInt(head.Metadata.height, 10) : null;
+
+            // guard against parseInt producing NaN if metadata was stored as ""
+            if (Number.isNaN(width)) width = null;
+            if (Number.isNaN(height)) height = null;
+          } catch (error) {
+            console.error(`Failed to read metadata for ${key}`, error);
           }
+
+          return {
+            url,
+            type: isVideo ? "video" : "image",
+            width,
+            height,
+            aspectRatio: width && height ? width / height : null,
+          };
         })
     );
 
