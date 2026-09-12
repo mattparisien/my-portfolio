@@ -1,48 +1,61 @@
 'use client'
 import Image from "next/image";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import { MediaGridItem } from "@/components/StickySections/StickySections";
 import { useMediaReady } from "@/app/hooks/useMediaReady";
 import { useWindowWidth } from "@/app/hooks/useWindowWidth";
 import gsap from "gsap";
-import { v4 as uuid_v4 } from 'uuid';
 
 interface IntroProps {
     items: MediaGridItem[]
 }
 
+const IS_INTRO_ENABLED = true;
 
-const ROW_ITEM_COUNT_PATTERN = [3, 2];
-const CELL_OFFSET_Y_PCT = 0.3;
-const CELL_OFFSET_X_PCT = 0.25;
-const IS_INTRO_ENABLED = false;
+/* -----------------------------
+   Layout tuning knobs
+-------------------------------- */
+const SIDE_PADDING_PCT = 0.02;   // small gutter on each side (fraction of viewport width)
+const TOP_PADDING_PCT = 0.08;    // empty space above first row
+const ROW_GAP_PCT = 0.045;       // vertical gap between rows (fraction of viewport width)
+const SLOT_FILL = 0.84;          // how much of its horizontal slot an item targets
+const SIZE_JITTER = 0.16;        // ± random size variation per item
+const MAX_ITEM_PCT = 0.42;       // hard cap on any single item's size
+const H_JITTER_FACTOR = 0.8;     // how much of the leftover slot space a middle item can drift into
+const V_JITTER_FACTOR = 0;       // vertical stagger within a row (0 = all items share one center line)
+const EDGE_BLEED = 0;            // how far an edge item may hang off the viewport (0 = fully on-screen)
 
-const chunkArray = (arr: MediaGridItem[], pattern: number[]) => {
-    const chunks: MediaGridItem[][] = [];
-    let currentIdx = 0;
-    let currentPatternIdx = 0;
+/* -----------------------------
+   Intro animation knobs
+-------------------------------- */
+const INTRO_SCALE_IN_DURATION = 0.6;
+const INTRO_SCALE_IN_STAGGER = 0.06;
+const INTRO_FLY_DURATION = 0.9;
+const INTRO_FLY_STAGGER = 0.05;
 
-    if (pattern.length === 0) return chunks;
-
-    while (currentIdx < arr.length) {
-        const size = pattern[currentPatternIdx % pattern.length];
-        chunks.push(arr.slice(currentIdx, currentIdx + size));
-        currentIdx += size;
-        currentPatternIdx++;
-    }
-
-    return chunks;
+/* Deterministic pseudo-random in [0, 1) — stable across re-renders for a given seed */
+const seededRandom = (seed: number) => {
+    let t = seed + 0x6d2b79f5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const getImageFrameSize = (item: MediaGridItem | null | undefined, cellSizePx: number) => {
+const isFeaturedItem = (item: MediaGridItem) =>
+    Boolean((item as { isFeatured?: boolean }).isFeatured);
+
+/* Fit an item's natural aspect ratio inside a square target box (contain) */
+const getImageFrameSize = (item: MediaGridItem | null | undefined, targetPx: number) => {
     if (!item) {
-        return { width: cellSizePx, height: cellSizePx };
+        return { width: targetPx, height: targetPx };
     }
 
-    const naturalWidth = item.width ?? (item.aspectRatio ? cellSizePx * item.aspectRatio : cellSizePx);
-    const naturalHeight = item.height ?? (item.aspectRatio ? cellSizePx / item.aspectRatio : cellSizePx);
+    const naturalWidth = item.width ?? (item.aspectRatio ? targetPx * item.aspectRatio : targetPx);
+    const naturalHeight = item.height ?? (item.aspectRatio ? targetPx / item.aspectRatio : targetPx);
 
-    const scale = Math.min(cellSizePx / naturalWidth, cellSizePx / naturalHeight, 1);
+    // no upscale cap — portfolio images are high-res, and we want them to
+    // reliably reach the target size so the layout reads as "big"
+    const scale = Math.min(targetPx / naturalWidth, targetPx / naturalHeight);
 
     return {
         width: Math.max(1, Math.round(naturalWidth * scale)),
@@ -50,449 +63,313 @@ const getImageFrameSize = (item: MediaGridItem | null | undefined, cellSizePx: n
     };
 };
 
-type GridCell = {
+type LaidOutCell = {
     id: string;
-    item: MediaGridItem | null;
-    offsetPx: {
-        x: number;
-        y: number;
-    };
-} | null;
+    item: MediaGridItem;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    isFeatured: boolean;
+};
 
 const Intro = (props: IntroProps) => {
     const { items } = props;
-    const [isIntro, setIsIntro] = useState(IS_INTRO_ENABLED);
-    const [isIntroReady, setIsIntroReady] = useState(false);
-    const [grid, setGrid] = useState<{ cellSizePx: number; gapSizePct: number; colCount: number }>({
-        cellSizePx: 0,
-        gapSizePct: 0.1,
-        colCount: 5,
-    });
 
-
-    const itemRefs = useRef<HTMLDivElement[]>([]);
-    const gridItems = useMemo<Array<GridCell[]>>(() => {
-
-        const chunkedItems = chunkArray(items, ROW_ITEM_COUNT_PATTERN);
-
-        const gridItems = chunkedItems.map((row): GridCell[] => {
-            if (row.length === 2) {
-                return [
-                    null,
-                    {
-                        id: uuid_v4(),
-                        item: row[0],
-                        offsetPx: {
-                            x: 0,
-                            y: 0
-                        }
-                    },
-                    null,
-                    {
-                        id: uuid_v4(),
-                        item: row[1],
-                        offsetPx: {
-                            x: 0,
-                            y: 0
-                        }
-                    },
-                    null
-                ];
-            }
-
-            return [
-                {
-                    id: uuid_v4(),
-                    item: row[0],
-                    offsetPx: {
-                        x: 0,
-                        y: 0
-                    }
-                },
-                null,
-                {
-                    id: uuid_v4(),
-                    item: row[1],
-                    offsetPx: {
-                        x: 0,
-                        y: 0
-                    }
-                },
-                null,
-                {
-                    id: uuid_v4(),
-                    item: row[2],
-                    offsetPx: {
-                        x: 0,
-                        y: 0
-                    }
-                }
-            ];
-        });
-
-        for (let i = 0; i < gridItems.length; i++) {
-            const currentRow = gridItems[i] ?? [];
-            const cellCount = currentRow.filter((x) => x).length;
-
-            for (let j = 0; j < currentRow.length; j++) {
-                const cell = currentRow[j];
-                if (cell && cell.item) {
-                    cell.offsetPx.y = ((grid.cellSizePx * CELL_OFFSET_Y_PCT) * (i + 1)) * -1;
-
-
-                    if (cellCount === 3) {
-                        if (j === 0) {
-                            cell.offsetPx.x = (grid.cellSizePx * CELL_OFFSET_X_PCT) * -1;
-                        } else if (j === 4) {
-                            cell.offsetPx.x = (grid.cellSizePx * CELL_OFFSET_X_PCT);
-                        }
-                    } else if (cellCount === 2) {
-
-                        if (j === 1) {
-                            cell.offsetPx.x = (grid.cellSizePx * (CELL_OFFSET_X_PCT / 2)) * -1;
-
-                        } else if (j === 3) {
-                            cell.offsetPx.x = (grid.cellSizePx * (CELL_OFFSET_X_PCT / 2));
-                        }
-                    }
-
-
-                }
-
-
-            }
-        }
-
-        return gridItems;
-
-    }, [items, grid]);
-
-
-
+    const containerRef = useRef<HTMLDivElement>(null);
+    const hasPlayedIntro = useRef(false);
     const windowWidth = useWindowWidth();
 
     const introItems = useMemo(() => items.slice(0, 5), [items]);
     const { isReady, markLoaded } = useMediaReady(introItems);
 
-    const introPositions = useMemo(() => {
-        if (itemRefs.current && itemRefs.current.length > 0) {
+    /* -----------------------------
+       Build the scattered layout.
+       - variable 2 or 3 items per row (seeded, so it varies but is stable)
+       - item size scales with how many share the row (fewer = bigger)
+       - edge items hug the viewport edge; nothing bleeds off or overlaps
+       - all items in a row share one horizontal center line
+    -------------------------------- */
+    const layout = useMemo<{ cells: LaidOutCell[]; totalHeight: number }>(() => {
+        if (!windowWidth || items.length === 0) {
+            return { cells: [], totalHeight: 0 };
+        }
 
-            return itemRefs.current.map(item => {
-                const { top, left } = item.getBoundingClientRect();
-                return {
-                    id: item.dataset.itemId,
-                    x: -left + (window.innerWidth / 2) - (item.dataset.width / 2),
-                    y: -top + (window.innerHeight / 2) - (item.dataset.height / 2)
+        const W = windowWidth;
+        const sidePadding = W * SIDE_PADDING_PCT;
+        const usableW = W - sidePadding * 2;
+        const rowGap = W * ROW_GAP_PCT;
+        const maxItem = W * MAX_ITEM_PCT;
 
+        // Chunk items into rows of 2 or 3, tracking each item's original index
+        // (used as a stable id so images don't remount on resize).
+        const rows: Array<{ item: MediaGridItem; index: number }[]> = [];
+        let idx = 0;
+        let rowSeed = 0;
+        while (idx < items.length) {
+            const remaining = items.length - idx;
+            let count = seededRandom(rowSeed * 7919 + 13) < 0.45 ? 2 : 3;
+            count = Math.min(count, remaining);
+            const row = [];
+            for (let k = 0; k < count; k++) {
+                row.push({ item: items[idx + k], index: idx + k });
+            }
+            rows.push(row);
+            idx += count;
+            rowSeed++;
+        }
+
+        const cells: LaidOutCell[] = [];
+        let cursorY = W * TOP_PADDING_PCT;
+
+        rows.forEach((row, ri) => {
+            const count = row.length;
+            const slotW = usableW / count;
+
+            // Size every item first so we know the row's height.
+            const sized = row.map(({ item, index }, ci) => {
+                const seed = ri * 131 + ci * 17 + 3;
+                const sizeScale = 1 + (seededRandom(seed) - 0.5) * 2 * SIZE_JITTER;
+                const target = Math.min(slotW * SLOT_FILL * sizeScale, maxItem);
+                const frame = getImageFrameSize(item, target);
+                return { item, index, frame, seed, ci };
+            });
+
+            const rowHeight = Math.max(...sized.map((s) => s.frame.height));
+
+            // Place each item horizontally within its slot. Edge items bias toward
+            // the viewport edge; middle items stay centered. Every item is kept
+            // clear of its neighbours' slots, so nothing overlaps.
+            const placed = sized.map(({ item, index, frame, seed, ci }) => {
+                const slotStart = sidePadding + slotW * ci;
+                const freeX = Math.max(0, slotW - frame.width);
+                const t = seededRandom(seed + 101);
+
+                let x: number;
+                if (count > 1 && ci === 0) {
+                    // leftmost: pull toward the left edge
+                    const minX = -frame.width * EDGE_BLEED;
+                    const maxX = slotStart + freeX; // never crosses into the next slot
+                    x = minX + (maxX - minX) * Math.pow(t, 1.8);
+                } else if (count > 1 && ci === count - 1) {
+                    // rightmost: pull toward the right edge
+                    const minX = slotStart; // never crosses into the previous slot
+                    const maxX = W - frame.width + frame.width * EDGE_BLEED;
+                    x = minX + (maxX - minX) * (1 - Math.pow(1 - t, 1.8));
+                } else {
+                    // middle: centered with mild jitter
+                    const slotCenterX = slotStart + slotW / 2;
+                    x = slotCenterX + (t - 0.5) * freeX * H_JITTER_FACTOR - frame.width / 2;
                 }
-            })
+
+                // guarantee the whole item stays on-screen
+                const clampedX = Math.max(0, Math.min(x, W - frame.width));
+
+                const vJitter = (seededRandom(seed + 202) - 0.5) * rowHeight * V_JITTER_FACTOR;
+                const localY = (rowHeight - frame.height) / 2 + vJitter;
+
+                return { id: `cell-${index}`, item, x: Math.round(clampedX), localY, frame };
+            });
+
+            // Shift the whole row so its top-most item sits exactly at cursorY.
+            const localMinTop = Math.min(...placed.map((p) => p.localY));
+            const localMaxBottom = Math.max(...placed.map((p) => p.localY + p.frame.height));
+            const shift = cursorY - localMinTop;
+
+            placed.forEach((p) => {
+                cells.push({
+                    id: p.id,
+                    item: p.item,
+                    x: p.x,
+                    y: Math.round(p.localY + shift),
+                    width: p.frame.width,
+                    height: p.frame.height,
+                    isFeatured: isFeaturedItem(p.item),
+                });
+            });
+
+            cursorY += localMaxBottom - localMinTop + rowGap;
+        });
+
+        // Fallback: if nothing is flagged featured, treat every item as featured
+        // so the intro still has something to animate.
+        if (!cells.some((c) => c.isFeatured)) {
+            cells.forEach((c) => {
+                c.isFeatured = true;
+            });
         }
-    }, [isReady, gridItems, grid]);
 
-    const getIntroPosition = useCallback((id: string) => {
-        return introPositions?.find(x => x.id === id);
-    }, [introPositions])
+        return { cells, totalHeight: Math.round(cursorY) };
+    }, [items, windowWidth]);
 
-    const addToRefs = (el: HTMLDivElement | null) => {
-        if (el && !itemRefs.current.includes(el)) {
-            itemRefs.current.push(el);
-        }
-    };
-
+    /* -----------------------------
+       Lightbox: center the clicked item's wrapper in the viewport and scale it up.
+    -------------------------------- */
     const toggleLightbox = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const target = e.currentTarget;
         const parent = target.parentElement;
-
-
         if (!parent) return;
 
         const rect = parent.getBoundingClientRect();
 
-        const elCenterX = rect.left + rect.width / 2;
-        const elCenterY = rect.top + rect.height / 2;
+        const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
+        const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
 
-        const viewportCenterX = window.innerWidth / 2;
-        const viewportCenterY = window.innerHeight / 2;
-
-        const deltaX = viewportCenterX - elCenterX;
-        const deltaY = viewportCenterY - elCenterY;
-
-        // current GSAP x/y (defaults to 0 if untransformed)
         const currentX = (gsap.getProperty(parent, "x") as number) || 0;
         const currentY = (gsap.getProperty(parent, "y") as number) || 0;
 
-        const scaleFactor = 2;
-        const width = (parent.dataset.width || 0) * scaleFactor;
-        const height = (parent.dataset.height || 0) * scaleFactor;
-
-
-        const tl = gsap.timeline();
-        tl.to(parent, {
-            x: currentX + deltaX,
-            y: currentY + deltaY,
-            scale: 2,
-
-            duration: 0.5,
-            ease: "power3.out",
-        })
-            .to(target, {
-                x: 0,
-                y: 0,
+        gsap.timeline()
+            .to(parent, {
+                x: currentX + deltaX,
+                y: currentY + deltaY,
+                scale: 2,
+                zIndex: 50,
                 duration: 0.5,
                 ease: "power3.out",
-            }, 0)
+            })
+            .to(target, { x: 0, y: 0, duration: 0.5, ease: "power3.out" }, 0);
     }, []);
 
-
+    /* -----------------------------
+       Intro sequence (only when IS_INTRO_ENABLED):
+         1. featured items start stacked at the viewport center, scaled to 0
+         2. they scale in (staggered)
+         3. they fly out to their resting grid positions
+         4. any non-featured items fade in at their resting spots
+       Runs once, after media is ready. GSAP fully owns transform/opacity here,
+       so React re-renders (from markLoaded) can't reset the animation.
+    -------------------------------- */
     useEffect(() => {
-        const cellSizePx = Math.round(windowWidth / 5);
+        if (!IS_INTRO_ENABLED || !isReady || hasPlayedIntro.current) return;
 
-        setGrid((prev) => {
-            if (prev.cellSizePx === cellSizePx) return prev;
-            return {
-                ...prev,
-                cellSizePx,
-            };
-        });
-    }, [windowWidth]);
+        const root = containerRef.current;
+        if (!root) return;
 
+        const nodes = Array.from(
+            root.querySelectorAll<HTMLElement>("[data-wrapper]")
+        );
+        if (nodes.length === 0) return;
 
-    const setIntroPositions = useCallback((items) => {
+        hasPlayedIntro.current = true;
 
-        return introPositions?.forEach(item => {
-            const node = items.find(x => x.dataset.itemId === item.id);
-            if (node) {
-                node.style.transform = `translate3d(${node.dataset.introPositionX}px, ${node.dataset.introPositionY}px, 0px)`;
-            }
-        })
-    }, [introPositions])
+        const featured = nodes.filter((n) => n.dataset.featured === "1");
+        const others = nodes.filter((n) => n.dataset.featured !== "1");
 
+        const centerX = (el: HTMLElement) =>
+            window.innerWidth / 2 - Number(el.dataset.width) / 2;
+        const centerY = (el: HTMLElement) =>
+            window.innerHeight / 2 - Number(el.dataset.height) / 2;
+        const restX = (el: HTMLElement) => Number(el.dataset.restX);
+        const restY = (el: HTMLElement) => Number(el.dataset.restY);
 
-
-
-    useEffect(() => {
-        if (isReady && itemRefs.current && itemRefs.current.length > 0 && IS_INTRO_ENABLED) {
-            // Set intro positions
-
-            const inViewRefs = itemRefs.current.filter(item => {
-                const rect = item.getBoundingClientRect();
-                return (
-                    rect.top < (window.innerHeight + (window.innerHeight / 2))
-                );
+        const ctx = gsap.context(() => {
+            // initial states
+            gsap.set(featured, {
+                x: (_i, el) => centerX(el as HTMLElement),
+                y: (_i, el) => centerY(el as HTMLElement),
+                scale: 0,
+                opacity: 1,
+            });
+            gsap.set(others, {
+                x: (_i, el) => restX(el as HTMLElement),
+                y: (_i, el) => restY(el as HTMLElement),
+                scale: 1,
+                opacity: 0,
             });
 
-            const invisibleRefs = itemRefs.current.filter(item => !inViewRefs.includes(item));
-
-            gsap.set(invisibleRefs, { opacity: 1, x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY });
-            setIntroPositions(inViewRefs);
-
             const tl = gsap.timeline();
-            tl.fromTo(inViewRefs, { opacity: 1, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.07, duration: 0.5, ease: "power4.out" })
-                .to(inViewRefs, { x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY, ease: "power3.out", duration: 1, stagger: 0.01 })
 
+            tl.to(featured, {
+                scale: 1,
+                duration: INTRO_SCALE_IN_DURATION,
+                ease: "back.out(1.5)",
+                stagger: INTRO_SCALE_IN_STAGGER,
+            }).to(
+                featured,
+                {
+                    x: (_i, el) => restX(el as HTMLElement),
+                    y: (_i, el) => restY(el as HTMLElement),
+                    duration: INTRO_FLY_DURATION,
+                    ease: "power3.inOut",
+                    stagger: INTRO_FLY_STAGGER,
+                },
+                "+=0.1"
+            );
 
-
-
-
-        }
-    }, [isReady])
-
-    const getPosition = useCallback((cellId: string, mediaWidth: number, mediaHeight: number) => {
-        const el = document.querySelector(`[data-cell-id="${cellId}"]`);
-
-        if (!el) {
-            return {
-                x: 0,
-                y: 0
+            if (others.length) {
+                tl.to(
+                    others,
+                    { opacity: 1, duration: 0.5, stagger: 0.03 },
+                    "-=0.5"
+                );
             }
-        }
+        }, root);
 
-        const { top, left, width, height } = el.getBoundingClientRect();
-
-        const cellCenterX = left + width / 2;
-        const cellCenterY = top + height / 2;
-
-        return {
-            x: cellCenterX - (mediaWidth / 2),
-            y: cellCenterY - mediaHeight / 2 
-        }
-    }, [grid])
-
+        return () => ctx.revert();
+    }, [isReady, layout]);
 
     return (
         <div className="z-20 block w-screen min-h-screen overflow-hidden">
-            <div className="relative w-full h-full">
-                <div className="virtual-grid w-full h-full flex flex-col">
-                    {gridItems.map((row, ri) => (
-                        <div className="row flex justify-between" key={ri}>
-                            {row?.map((cell, ci) => {
-                                const imageFrameSize = getImageFrameSize(cell?.item ?? null, grid.cellSizePx);
-                                const introPosition = getIntroPosition(cell?.id as string);
-
-                                return (
-                                    <div key={ci}
-                                        data-width={grid.cellSizePx}
-                                        data-height={grid.cellSizePx}
-                                        data-cell-id={cell?.id}
-                                        data-offset-x={cell?.offsetPx.x}
-                                        data-offset-y={cell?.offsetPx.y}
-                                        style={{
-                                            width: `${grid.cellSizePx}px`,
-                                            height: `${grid.cellSizePx}px`,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            position: "relative"
-                                        }}
-                                    >
-                                        {/* <div
-                                            className="relative overflow-hidden rounded-md"
-                                            style={{
-                                                width: `${imageFrameSize.width}px`,
-                                                height: `${imageFrameSize.height}px`,
-                                                opacity: 0
-                                            }}
-                                            ref={self => addToRefs(self)}
-                                            data-item-id={cell?.id}
-                                            data-width={imageFrameSize.width}
-                                            data-height={imageFrameSize.height}
-                                            data-intro-position-x={introPosition?.x}
-                                            data-intro-position-y={introPosition?.y}
-                                            data-position-x={cell?.offsetPx.x}
-                                            data-position-y={cell?.offsetPx.y}
-                                            onClick={toggleLightbox}
-                                        >
-
-
-                                            {cell?.item?.type === 'video' ? (
-                                                <video
-                                                    src={cell.item.url}
-                                                    className="block h-full w-full object-cover"
-                                                    muted
-                                                    loop
-                                                    playsInline
-                                                    autoPlay
-                                                    onLoadedData={() => cell.item && markLoaded(cell.item.url)}
-                                                />
-                                            ) : cell?.item ? (
-                                                <Image
-                                                    src={cell.item.url}
-                                                    alt=""
-                                                    width={imageFrameSize.width}
-                                                    height={imageFrameSize.height}
-                                                    sizes="200px"
-                                                    className="block h-full w-full object-cover"
-                                                    priority={ci < 3}
-                                                    onLoad={() => cell.item && markLoaded(cell.item.url)}
-
-                                                />
-                                            ) : null}
-                                        </div> */}
-                                    </div>
-                                );
-                            })}
-
-                        </div>
-                    ))}
-                </div>
-                {gridItems.map((row, ri) => (
-                    row?.map((cell, ci) => {
-                        const imageFrameSize = getImageFrameSize(cell?.item ?? null, grid.cellSizePx);
-                        const introPosition = getIntroPosition(cell?.id as string);
-                        const { x, y } = getPosition(cell?.id, imageFrameSize.width, imageFrameSize.height);
-                        return (
-                            <div className="absolute top-0 left-0" key={ci} style={{
-                                transform: `translate3d(${x}px, ${y}px, 0px)`,
-
-                            }}>
-                                <div
-                                    className="relative overflow-hidden rounded-md"
-                                    style={{
-                                        width: `${imageFrameSize.width}px`,
-                                        height: `${imageFrameSize.height}px`,
-                                        opacity: 1
-                                    }}
-                                    ref={self => addToRefs(self)}
-                                    data-item-id={cell?.id}
-                                    data-width={imageFrameSize.width}
-                                    data-height={imageFrameSize.height}
-                                    data-intro-position-x={introPosition?.x}
-                                    data-intro-position-y={introPosition?.y}
-                                    data-position-x={x}
-                                    data-position-y={y}
-                                    data-offset-x={cell?.offsetPx.x}
-                                    data-offset-y={cell?.offsetPx.y}
-                                    onClick={toggleLightbox}
-                                >
-
-
-                                    {cell?.item?.type === 'video' ? (
-                                        <video
-                                            src={cell.item.url}
-                                            className="block h-full w-full object-cover"
-                                            muted
-                                            loop
-                                            playsInline
-                                            autoPlay
-                                            onLoadedData={() => cell.item && markLoaded(cell.item.url)}
-                                        />
-                                    ) : cell?.item ? (
-                                        <Image
-                                            src={cell.item.url}
-                                            alt=""
-                                            width={imageFrameSize.width}
-                                            height={imageFrameSize.height}
-                                            sizes="200px"
-                                            className="block h-full w-full object-cover"
-                                            priority={ci < 3}
-                                            onLoad={() => cell.item && markLoaded(cell.item.url)}
-
-                                        />
-                                    ) : null}
-                                </div>
-                            </div>
-                        )
-
-                    })
-                ))}
-                {/* {items.map((item, i) => (
+            <div
+                ref={containerRef}
+                className="relative w-full"
+                style={{ height: `${layout.totalHeight}px` }}
+            >
+                {layout.cells.map((cell, ci) => (
                     <div
-                        key={i}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-                        style={{
-                            width: "200px",
-                            height: "200px",
-                            opacity: 0,
-                            animation: isReady ? `introReveal 0ms ease-out forwards` : 'none',
-                            animationDelay: isReady ? `${i * 200}ms` : '0ms',
-                        }}
+                        key={cell.id}
+                        data-wrapper
+                        data-rest-x={cell.x}
+                        data-rest-y={cell.y}
+                        data-featured={cell.isFeatured ? "1" : "0"}
+                        data-width={cell.width}
+                        data-height={cell.height}
+                        className={`absolute top-0 left-0${IS_INTRO_ENABLED ? " opacity-0" : ""}`}
+                        style={
+                            IS_INTRO_ENABLED
+                                ? { willChange: "transform" }
+                                : {
+                                      transform: `translate3d(${cell.x}px, ${cell.y}px, 0px)`,
+                                      willChange: "transform",
+                                  }
+                        }
                     >
-                        {item.type === 'video' ? (
-                            <video
-                                src={item.url}
-                                className="w-full h-full object-contain"
-                                muted
-                                loop
-                                playsInline
-                                autoPlay
-                                onLoadedData={() => markLoaded(item.url)}
-                            />
-                        ) : (
-                            <Image
-                                src={item.url}
-                                alt=""
-                                fill
-                                sizes="200px"
-                                className="object-contain"
-                                priority={i < 3}
-                                onLoad={() => markLoaded(item.url)}
-                            />
-                        )}
+                        <div
+                            className="relative overflow-hidden rounded-xl"
+                            style={{ width: `${cell.width}px`, height: `${cell.height}px` }}
+                            data-item-id={cell.id}
+                            data-width={cell.width}
+                            data-height={cell.height}
+                            onClick={toggleLightbox}
+                        >
+                            {cell.item.type === "video" ? (
+                                <video
+                                    src={cell.item.url}
+                                    className="block h-full w-full object-cover"
+                                    muted
+                                    loop
+                                    playsInline
+                                    autoPlay
+                                    onLoadedData={() => markLoaded(cell.item.url)}
+                                />
+                            ) : (
+                                <Image
+                                    src={cell.item.url}
+                                    alt=""
+                                    width={cell.width}
+                                    height={cell.height}
+                                    sizes="(max-width: 768px) 50vw, 33vw"
+                                    className="block h-full w-full object-cover"
+                                    priority={ci < 3}
+                                    onLoad={() => markLoaded(cell.item.url)}
+                                />
+                            )}
+                        </div>
                     </div>
-                ))} */}
+                ))}
             </div>
         </div>
-    )
-}
+    );
+};
 
 export default Intro;
