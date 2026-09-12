@@ -54,12 +54,14 @@ export async function GET() {
 
           let width: number | null = null;
           let height: number | null = null;
+          let isFeatured: boolean = false;
 
           try {
             const head = await r2.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
 
             width = head.Metadata?.width ? parseInt(head.Metadata.width, 10) : null;
             height = head.Metadata?.height ? parseInt(head.Metadata.height, 10) : null;
+            isFeatured = head.Metadata?.isfeatured ? Boolean(head.Metadata.isfeatured) : false;
 
             // guard against parseInt producing NaN if metadata was stored as ""
             if (Number.isNaN(width)) width = null;
@@ -74,6 +76,7 @@ export async function GET() {
             width,
             height,
             aspectRatio: width && height ? width / height : null,
+            isFeatured
           };
         })
     );

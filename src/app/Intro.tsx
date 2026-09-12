@@ -15,6 +15,7 @@ interface IntroProps {
 const ROW_ITEM_COUNT_PATTERN = [3, 2];
 const CELL_OFFSET_Y_PCT = 0.3;
 const CELL_OFFSET_X_PCT = 0.25;
+const IS_INTRO_ENABLED = false;
 
 const chunkArray = (arr: MediaGridItem[], pattern: number[]) => {
     const chunks: MediaGridItem[][] = [];
@@ -60,7 +61,7 @@ type GridCell = {
 
 const Intro = (props: IntroProps) => {
     const { items } = props;
-    const [isIntro, setIsIntro] = useState(true);
+    const [isIntro, setIsIntro] = useState(IS_INTRO_ENABLED);
     const [isIntroReady, setIsIntroReady] = useState(false);
     const [grid, setGrid] = useState<{ cellSizePx: number; gapSizePct: number; colCount: number }>({
         cellSizePx: 0,
@@ -180,8 +181,8 @@ const Intro = (props: IntroProps) => {
                 const { top, left } = item.getBoundingClientRect();
                 return {
                     id: item.dataset.itemId,
-                    x: -left + (window.innerWidth / 2) - (item.dataset.itemWidth / 2),
-                    y: -top + (window.innerHeight / 2) - (item.dataset.itemHeight / 2)
+                    x: -left + (window.innerWidth / 2) - (item.dataset.width / 2),
+                    y: -top + (window.innerHeight / 2) - (item.dataset.height / 2)
 
                 }
             })
@@ -198,9 +199,53 @@ const Intro = (props: IntroProps) => {
         }
     };
 
+    const toggleLightbox = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        const parent = target.parentElement;
+
+
+        if (!parent) return;
+
+        const rect = parent.getBoundingClientRect();
+
+        const elCenterX = rect.left + rect.width / 2;
+        const elCenterY = rect.top + rect.height / 2;
+
+        const viewportCenterX = window.innerWidth / 2;
+        const viewportCenterY = window.innerHeight / 2;
+
+        const deltaX = viewportCenterX - elCenterX;
+        const deltaY = viewportCenterY - elCenterY;
+
+        // current GSAP x/y (defaults to 0 if untransformed)
+        const currentX = (gsap.getProperty(parent, "x") as number) || 0;
+        const currentY = (gsap.getProperty(parent, "y") as number) || 0;
+
+        const scaleFactor = 2;
+        const width = (parent.dataset.width || 0) * scaleFactor;
+        const height = (parent.dataset.height || 0) * scaleFactor;
+
+
+        const tl = gsap.timeline();
+        tl.to(parent, {
+            x: currentX + deltaX,
+            y: currentY + deltaY,
+            scale: 2,
+
+            duration: 0.5,
+            ease: "power3.out",
+        })
+            .to(target, {
+                x: 0,
+                y: 0,
+                duration: 0.5,
+                ease: "power3.out",
+            }, 0)
+    }, []);
+
 
     useEffect(() => {
-        const cellSizePx = Math.round(windowWidth / 6);
+        const cellSizePx = Math.round(windowWidth / 5);
 
         setGrid((prev) => {
             if (prev.cellSizePx === cellSizePx) return prev;
@@ -222,23 +267,11 @@ const Intro = (props: IntroProps) => {
         })
     }, [introPositions])
 
-    const setGridPositions = useCallback((items) => {
-        return introPositions?.forEach(item => {
-            const node = items.find(x => x.dataset.itemId === item.id);
-            if (node) {
-                gsap.to(node, {
-                    x: node.dataset.positionX,
-                    y: node.dataset.positionY,
-                    ease: "power3.out",
-                    duration: 1
-                })
-            }
-        })
-    }, [introPositions])
+
 
 
     useEffect(() => {
-        if (isReady && itemRefs.current && itemRefs.current.length > 0) {
+        if (isReady && itemRefs.current && itemRefs.current.length > 0 && IS_INTRO_ENABLED) {
             // Set intro positions
 
             const inViewRefs = itemRefs.current.filter(item => {
@@ -254,7 +287,7 @@ const Intro = (props: IntroProps) => {
             setIntroPositions(inViewRefs);
 
             const tl = gsap.timeline();
-            tl.to(inViewRefs, { opacity: 1, stagger: 0.1, ease: "none", duration: 0 })
+            tl.fromTo(inViewRefs, { opacity: 1, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.07, duration: 0.5, ease: "power4.out" })
                 .to(inViewRefs, { x: (idx, node) => node.dataset.positionX, y: (idx, node) => node.dataset.positionY, ease: "power3.out", duration: 1, stagger: 0.01 })
 
 
@@ -264,12 +297,32 @@ const Intro = (props: IntroProps) => {
         }
     }, [isReady])
 
+    const getPosition = useCallback((cellId: string, mediaWidth: number, mediaHeight: number) => {
+        const el = document.querySelector(`[data-cell-id="${cellId}"]`);
+
+        if (!el) {
+            return {
+                x: 0,
+                y: 0
+            }
+        }
+
+        const { top, left, width, height } = el.getBoundingClientRect();
+
+        const cellCenterX = left + width / 2;
+        const cellCenterY = top + height / 2;
+
+        return {
+            x: cellCenterX - (mediaWidth / 2),
+            y: cellCenterY - mediaHeight / 2 
+        }
+    }, [grid])
 
 
     return (
-        <div className="z-20 block bg-white w-screen min-h-screen overflow-hidden">
+        <div className="z-20 block w-screen min-h-screen overflow-hidden">
             <div className="relative w-full h-full">
-                <div className="grid w-full h-full flex flex-col">
+                <div className="virtual-grid w-full h-full flex flex-col">
                     {gridItems.map((row, ri) => (
                         <div className="row flex justify-between" key={ri}>
                             {row?.map((cell, ci) => {
@@ -277,16 +330,22 @@ const Intro = (props: IntroProps) => {
                                 const introPosition = getIntroPosition(cell?.id as string);
 
                                 return (
-                                    <div key={ci} style={{
-                                        width: `${grid.cellSizePx}px`,
-                                        height: `${grid.cellSizePx}px`,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        position: "relative"
-                                    }}
+                                    <div key={ci}
+                                        data-width={grid.cellSizePx}
+                                        data-height={grid.cellSizePx}
+                                        data-cell-id={cell?.id}
+                                        data-offset-x={cell?.offsetPx.x}
+                                        data-offset-y={cell?.offsetPx.y}
+                                        style={{
+                                            width: `${grid.cellSizePx}px`,
+                                            height: `${grid.cellSizePx}px`,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            position: "relative"
+                                        }}
                                     >
-                                        <div
+                                        {/* <div
                                             className="relative overflow-hidden rounded-md"
                                             style={{
                                                 width: `${imageFrameSize.width}px`,
@@ -295,12 +354,13 @@ const Intro = (props: IntroProps) => {
                                             }}
                                             ref={self => addToRefs(self)}
                                             data-item-id={cell?.id}
-                                            data-item-width={imageFrameSize.width}
-                                            data-item-height={imageFrameSize.height}
+                                            data-width={imageFrameSize.width}
+                                            data-height={imageFrameSize.height}
                                             data-intro-position-x={introPosition?.x}
                                             data-intro-position-y={introPosition?.y}
                                             data-position-x={cell?.offsetPx.x}
                                             data-position-y={cell?.offsetPx.y}
+                                            onClick={toggleLightbox}
                                         >
 
 
@@ -327,17 +387,74 @@ const Intro = (props: IntroProps) => {
 
                                                 />
                                             ) : null}
-                                        </div>
+                                        </div> */}
                                     </div>
                                 );
                             })}
 
                         </div>
                     ))}
-
-
-
                 </div>
+                {gridItems.map((row, ri) => (
+                    row?.map((cell, ci) => {
+                        const imageFrameSize = getImageFrameSize(cell?.item ?? null, grid.cellSizePx);
+                        const introPosition = getIntroPosition(cell?.id as string);
+                        const { x, y } = getPosition(cell?.id, imageFrameSize.width, imageFrameSize.height);
+                        return (
+                            <div className="absolute top-0 left-0" key={ci} style={{
+                                transform: `translate3d(${x}px, ${y}px, 0px)`,
+
+                            }}>
+                                <div
+                                    className="relative overflow-hidden rounded-md"
+                                    style={{
+                                        width: `${imageFrameSize.width}px`,
+                                        height: `${imageFrameSize.height}px`,
+                                        opacity: 1
+                                    }}
+                                    ref={self => addToRefs(self)}
+                                    data-item-id={cell?.id}
+                                    data-width={imageFrameSize.width}
+                                    data-height={imageFrameSize.height}
+                                    data-intro-position-x={introPosition?.x}
+                                    data-intro-position-y={introPosition?.y}
+                                    data-position-x={x}
+                                    data-position-y={y}
+                                    data-offset-x={cell?.offsetPx.x}
+                                    data-offset-y={cell?.offsetPx.y}
+                                    onClick={toggleLightbox}
+                                >
+
+
+                                    {cell?.item?.type === 'video' ? (
+                                        <video
+                                            src={cell.item.url}
+                                            className="block h-full w-full object-cover"
+                                            muted
+                                            loop
+                                            playsInline
+                                            autoPlay
+                                            onLoadedData={() => cell.item && markLoaded(cell.item.url)}
+                                        />
+                                    ) : cell?.item ? (
+                                        <Image
+                                            src={cell.item.url}
+                                            alt=""
+                                            width={imageFrameSize.width}
+                                            height={imageFrameSize.height}
+                                            sizes="200px"
+                                            className="block h-full w-full object-cover"
+                                            priority={ci < 3}
+                                            onLoad={() => cell.item && markLoaded(cell.item.url)}
+
+                                        />
+                                    ) : null}
+                                </div>
+                            </div>
+                        )
+
+                    })
+                ))}
                 {/* {items.map((item, i) => (
                     <div
                         key={i}

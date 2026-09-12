@@ -7,6 +7,7 @@ export interface MediaItem {
   url: string;
   type: 'image' | 'video';
   format: string;
+  isFeatured?: boolean;
 }
 
 // Simple seeded random generator (mulberry32)
@@ -41,9 +42,17 @@ export default function Home() {
       try {
         const response = await fetch('/api/cloudinary-images');
         const data = await response.json();
-        const mediaItems = data.media || [];
+        const mediaItems = (data.media || []) as MediaItem[];
 
-        setMedia(shuffle(mediaItems, 200) as MediaGridItem[]);
+        const featuredItems = mediaItems.filter(item => item.isFeatured);
+        const nonFeaturedItems = mediaItems.filter(item => !item.isFeatured);
+
+        const orderedMedia = [
+          ...featuredItems,
+          ...shuffle(nonFeaturedItems, 110),
+        ] as MediaGridItem[];
+
+        setMedia(orderedMedia);
       } catch (error) {
         console.error('Error fetching Cloudinary media:', error);
         setMedia([]);
@@ -66,6 +75,7 @@ export default function Home() {
           WebkitMinHeight: '-webkit-fill-available',
         } as React.CSSProperties}
         data-scroll-container
+        className="bg-[#C8D157]"
       >
         {/* <div className="flex flex-col justify-between items-start w-screen fixed top-0 left-0 sm:px-8 sm:py-5 px-4 py-3 bg-yellow-300">
           <h2
