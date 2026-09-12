@@ -44,12 +44,12 @@ export default function Home() {
         const data = await response.json();
         const mediaItems = (data.media || []) as MediaItem[];
 
-        const featuredItems = mediaItems.filter(item => item.isFeatured);
+        const featuredItems = shuffle(mediaItems.filter(item => item.isFeatured), 2);
         const nonFeaturedItems = mediaItems.filter(item => !item.isFeatured);
 
         const orderedMedia = [
           ...featuredItems,
-          ...shuffle(nonFeaturedItems, 10),
+          ...shuffle(nonFeaturedItems, 13),
         ] as MediaGridItem[];
 
         setMedia(orderedMedia);

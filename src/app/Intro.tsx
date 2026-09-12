@@ -1,6 +1,6 @@
 'use client'
 import Image from "next/image";
-import { useEffect, useMemo, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MediaGridItem } from "@/components/StickySections/StickySections";
 import { useMediaReady } from "@/app/hooks/useMediaReady";
 import { useWindowWidth } from "@/app/hooks/useWindowWidth";
@@ -24,6 +24,14 @@ const MAX_ITEM_PCT = 0.42;       // hard cap on any single item's size
 const H_JITTER_FACTOR = 0.8;     // how much of the leftover slot space a middle item can drift into
 const V_JITTER_FACTOR = 0;       // vertical stagger within a row (0 = all items share one center line)
 const EDGE_BLEED = 0;            // how far an edge item may hang off the viewport (0 = fully on-screen)
+
+/* -----------------------------
+   Lightbox knobs
+-------------------------------- */
+const LIGHTBOX_MARGIN = 0.9;     // max fraction of the viewport the opened image may occupy
+const LIGHTBOX_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+const TRANSFORM_TRANSITION = `transform 0.6s ${LIGHTBOX_EASE}`;
+const OPACITY_TRANSITION = "opacity 0.4s ease";
 
 /* -----------------------------
    Intro animation knobs
@@ -53,8 +61,6 @@ const getImageFrameSize = (item: MediaGridItem | null | undefined, targetPx: num
     const naturalWidth = item.width ?? (item.aspectRatio ? targetPx * item.aspectRatio : targetPx);
     const naturalHeight = item.height ?? (item.aspectRatio ? targetPx / item.aspectRatio : targetPx);
 
-    // no upscale cap — portfolio images are high-res, and we want them to
-    // reliably reach the target size so the layout reads as "big"
     const scale = Math.min(targetPx / naturalWidth, targetPx / naturalHeight);
 
     return {
@@ -73,6 +79,13 @@ type LaidOutCell = {
     isFeatured: boolean;
 };
 
+type ActiveLightbox = {
+    id: string;
+    tx: number;
+    ty: number;
+    scale: number;
+};
+
 const Intro = (props: IntroProps) => {
     const { items } = props;
 
@@ -80,15 +93,17 @@ const Intro = (props: IntroProps) => {
     const hasPlayedIntro = useRef(false);
     const windowWidth = useWindowWidth();
 
+    // When the intro is enabled, GSAP owns the transforms until it finishes;
+    // after that (or immediately, if disabled) React/CSS take over so the
+    // lightbox can drive them.
+    const [introDone, setIntroDone] = useState(!IS_INTRO_ENABLED);
+    const [active, setActive] = useState<ActiveLightbox | null>(null);
+
     const introItems = useMemo(() => items.slice(0, 5), [items]);
     const { isReady, markLoaded } = useMediaReady(introItems);
 
     /* -----------------------------
        Build the scattered layout.
-       - variable 2 or 3 items per row (seeded, so it varies but is stable)
-       - item size scales with how many share the row (fewer = bigger)
-       - edge items hug the viewport edge; nothing bleeds off or overlaps
-       - all items in a row share one horizontal center line
     -------------------------------- */
     const layout = useMemo<{ cells: LaidOutCell[]; totalHeight: number }>(() => {
         if (!windowWidth || items.length === 0) {
@@ -101,8 +116,6 @@ const Intro = (props: IntroProps) => {
         const rowGap = W * ROW_GAP_PCT;
         const maxItem = W * MAX_ITEM_PCT;
 
-        // Chunk items into rows of 2 or 3, tracking each item's original index
-        // (used as a stable id so images don't remount on resize).
         const rows: Array<{ item: MediaGridItem; index: number }[]> = [];
         let idx = 0;
         let rowSeed = 0;
@@ -126,7 +139,6 @@ const Intro = (props: IntroProps) => {
             const count = row.length;
             const slotW = usableW / count;
 
-            // Size every item first so we know the row's height.
             const sized = row.map(({ item, index }, ci) => {
                 const seed = ri * 131 + ci * 17 + 3;
                 const sizeScale = 1 + (seededRandom(seed) - 0.5) * 2 * SIZE_JITTER;
@@ -137,9 +149,6 @@ const Intro = (props: IntroProps) => {
 
             const rowHeight = Math.max(...sized.map((s) => s.frame.height));
 
-            // Place each item horizontally within its slot. Edge items bias toward
-            // the viewport edge; middle items stay centered. Every item is kept
-            // clear of its neighbours' slots, so nothing overlaps.
             const placed = sized.map(({ item, index, frame, seed, ci }) => {
                 const slotStart = sidePadding + slotW * ci;
                 const freeX = Math.max(0, slotW - frame.width);
@@ -147,22 +156,18 @@ const Intro = (props: IntroProps) => {
 
                 let x: number;
                 if (count > 1 && ci === 0) {
-                    // leftmost: pull toward the left edge
                     const minX = -frame.width * EDGE_BLEED;
-                    const maxX = slotStart + freeX; // never crosses into the next slot
+                    const maxX = slotStart + freeX;
                     x = minX + (maxX - minX) * Math.pow(t, 1.8);
                 } else if (count > 1 && ci === count - 1) {
-                    // rightmost: pull toward the right edge
-                    const minX = slotStart; // never crosses into the previous slot
+                    const minX = slotStart;
                     const maxX = W - frame.width + frame.width * EDGE_BLEED;
                     x = minX + (maxX - minX) * (1 - Math.pow(1 - t, 1.8));
                 } else {
-                    // middle: centered with mild jitter
                     const slotCenterX = slotStart + slotW / 2;
                     x = slotCenterX + (t - 0.5) * freeX * H_JITTER_FACTOR - frame.width / 2;
                 }
 
-                // guarantee the whole item stays on-screen
                 const clampedX = Math.max(0, Math.min(x, W - frame.width));
 
                 const vJitter = (seededRandom(seed + 202) - 0.5) * rowHeight * V_JITTER_FACTOR;
@@ -171,7 +176,6 @@ const Intro = (props: IntroProps) => {
                 return { id: `cell-${index}`, item, x: Math.round(clampedX), localY, frame };
             });
 
-            // Shift the whole row so its top-most item sits exactly at cursorY.
             const localMinTop = Math.min(...placed.map((p) => p.localY));
             const localMaxBottom = Math.max(...placed.map((p) => p.localY + p.frame.height));
             const shift = cursorY - localMinTop;
@@ -191,8 +195,6 @@ const Intro = (props: IntroProps) => {
             cursorY += localMaxBottom - localMinTop + rowGap;
         });
 
-        // Fallback: if nothing is flagged featured, treat every item as featured
-        // so the intro still has something to animate.
         if (!cells.some((c) => c.isFeatured)) {
             cells.forEach((c) => {
                 c.isFeatured = true;
@@ -203,41 +205,66 @@ const Intro = (props: IntroProps) => {
     }, [items, windowWidth]);
 
     /* -----------------------------
-       Lightbox: center the clicked item's wrapper in the viewport and scale it up.
+       Lightbox open / close
     -------------------------------- */
-    const toggleLightbox = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        const target = e.currentTarget;
-        const parent = target.parentElement;
-        if (!parent) return;
+    const handleImageClick = useCallback(
+        (e: React.MouseEvent<HTMLDivElement>, cell: LaidOutCell) => {
+            e.stopPropagation();
 
-        const rect = parent.getBoundingClientRect();
+            // clicking the already-open image closes it
+            if (active?.id === cell.id) {
+                setActive(null);
+                return;
+            }
 
-        const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
-        const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
+            const wrapper = e.currentTarget.parentElement as HTMLElement | null;
+            if (!wrapper) return;
 
-        const currentX = (gsap.getProperty(parent, "x") as number) || 0;
-        const currentY = (gsap.getProperty(parent, "y") as number) || 0;
+            // Center on the viewport by nudging the current translate by the delta
+            // between the item's current center and the viewport center.
+            const rect = wrapper.getBoundingClientRect();
+            const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
+            const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
 
-        gsap.timeline()
-            .to(parent, {
-                x: currentX + deltaX,
-                y: currentY + deltaY,
-                scale: 2,
-                zIndex: 50,
-                duration: 0.5,
-                ease: "power3.out",
-            })
-            .to(target, { x: 0, y: 0, duration: 0.5, ease: "power3.out" }, 0);
-    }, []);
+            // Scale up to fill the viewport, but never exceed LIGHTBOX_MARGIN of
+            // either dimension.
+            const scale = Math.min(
+                (window.innerWidth * LIGHTBOX_MARGIN) / cell.width,
+                (window.innerHeight * LIGHTBOX_MARGIN) / cell.height
+            );
+
+            setActive({
+                id: cell.id,
+                tx: cell.x + deltaX,
+                ty: cell.y + deltaY,
+                scale,
+            });
+        },
+        [active]
+    );
+
+    const closeLightbox = useCallback(() => setActive(null), []);
+
+    // Lock page scroll + close on Escape while a lightbox is open.
+    useEffect(() => {
+        if (!active) return;
+
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setActive(null);
+        };
+        window.addEventListener("keydown", onKey);
+
+        return () => {
+            document.body.style.overflow = prevOverflow;
+            window.removeEventListener("keydown", onKey);
+        };
+    }, [active]);
 
     /* -----------------------------
-       Intro sequence (only when IS_INTRO_ENABLED):
-         1. featured items start stacked at the viewport center, scaled to 0
-         2. they scale in (staggered)
-         3. they fly out to their resting grid positions
-         4. any non-featured items fade in at their resting spots
-       Runs once, after media is ready. GSAP fully owns transform/opacity here,
-       so React re-renders (from markLoaded) can't reset the animation.
+       Intro sequence (only when IS_INTRO_ENABLED)
     -------------------------------- */
     useEffect(() => {
         if (!IS_INTRO_ENABLED || !isReady || hasPlayedIntro.current) return;
@@ -245,9 +272,7 @@ const Intro = (props: IntroProps) => {
         const root = containerRef.current;
         if (!root) return;
 
-        const nodes = Array.from(
-            root.querySelectorAll<HTMLElement>("[data-wrapper]")
-        );
+        const nodes = Array.from(root.querySelectorAll<HTMLElement>("[data-wrapper]"));
         if (nodes.length === 0) return;
 
         hasPlayedIntro.current = true;
@@ -255,15 +280,12 @@ const Intro = (props: IntroProps) => {
         const featured = nodes.filter((n) => n.dataset.featured === "1");
         const others = nodes.filter((n) => n.dataset.featured !== "1");
 
-        const centerX = (el: HTMLElement) =>
-            window.innerWidth / 2 - Number(el.dataset.width) / 2;
-        const centerY = (el: HTMLElement) =>
-            window.innerHeight / 2 - Number(el.dataset.height) / 2;
+        const centerX = (el: HTMLElement) => window.innerWidth / 2 - Number(el.dataset.width) / 2;
+        const centerY = (el: HTMLElement) => window.innerHeight / 2 - Number(el.dataset.height) / 2;
         const restX = (el: HTMLElement) => Number(el.dataset.restX);
         const restY = (el: HTMLElement) => Number(el.dataset.restY);
 
         const ctx = gsap.context(() => {
-            // initial states
             gsap.set(featured, {
                 x: (_i, el) => centerX(el as HTMLElement),
                 y: (_i, el) => centerY(el as HTMLElement),
@@ -277,12 +299,14 @@ const Intro = (props: IntroProps) => {
                 opacity: 0,
             });
 
-            const tl = gsap.timeline();
+            const tl = gsap.timeline({
+                onComplete: () => setIntroDone(true), // hand transforms back to React
+            });
 
             tl.to(featured, {
                 scale: 1,
                 duration: INTRO_SCALE_IN_DURATION,
-                ease: "back.out(1.5)",
+                ease: "power3.out",
                 stagger: INTRO_SCALE_IN_STAGGER,
             }).to(
                 featured,
@@ -297,16 +321,15 @@ const Intro = (props: IntroProps) => {
             );
 
             if (others.length) {
-                tl.to(
-                    others,
-                    { opacity: 1, duration: 0.5, stagger: 0.03 },
-                    "-=0.5"
-                );
+                tl.to(others, { opacity: 1, duration: 0.5, stagger: 0.03 }, "-=0.5");
             }
         }, root);
 
         return () => ctx.revert();
     }, [isReady, layout]);
+
+    // While GSAP is running the intro, keep transforms out of React's hands.
+    const introControlled = IS_INTRO_ENABLED && !introDone;
 
     return (
         <div className="z-20 block w-screen min-h-screen overflow-hidden">
@@ -315,58 +338,80 @@ const Intro = (props: IntroProps) => {
                 className="relative w-full"
                 style={{ height: `${layout.totalHeight}px` }}
             >
-                {layout.cells.map((cell, ci) => (
-                    <div
-                        key={cell.id}
-                        data-wrapper
-                        data-rest-x={cell.x}
-                        data-rest-y={cell.y}
-                        data-featured={cell.isFeatured ? "1" : "0"}
-                        data-width={cell.width}
-                        data-height={cell.height}
-                        className={`absolute top-0 left-0${IS_INTRO_ENABLED ? " opacity-0" : ""}`}
-                        style={
-                            IS_INTRO_ENABLED
-                                ? { willChange: "transform" }
-                                : {
-                                      transform: `translate3d(${cell.x}px, ${cell.y}px, 0px)`,
-                                      willChange: "transform",
-                                  }
-                        }
-                    >
+                {layout.cells.map((cell, ci) => {
+                    const isActive = active?.id === cell.id;
+                    const dimmed = Boolean(active) && !isActive;
+
+                    const transform = isActive
+                        ? `translate3d(${active!.tx}px, ${active!.ty}px, 0px) scale(${active!.scale})`
+                        : `translate3d(${cell.x}px, ${cell.y}px, 0px)`;
+
+                    const wrapperStyle: React.CSSProperties = introControlled
+                        ? { willChange: "transform" } // GSAP owns transform/opacity
+                        : {
+                              transform,
+                              opacity: dimmed ? 0 : 1,
+                              transition: `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
+                              zIndex: isActive ? 50 : 1,
+                              pointerEvents: dimmed ? "none" : "auto",
+                              willChange: "transform",
+                          };
+
+                    return (
                         <div
-                            className="relative overflow-hidden rounded-xl"
-                            style={{ width: `${cell.width}px`, height: `${cell.height}px` }}
-                            data-item-id={cell.id}
+                            key={cell.id}
+                            data-wrapper
+                            data-rest-x={cell.x}
+                            data-rest-y={cell.y}
+                            data-featured={cell.isFeatured ? "1" : "0"}
                             data-width={cell.width}
                             data-height={cell.height}
-                            onClick={toggleLightbox}
+                            className={`absolute top-0 left-0${introControlled ? " opacity-0" : ""}`}
+                            style={wrapperStyle}
                         >
-                            {cell.item.type === "video" ? (
-                                <video
-                                    src={cell.item.url}
-                                    className="block h-full w-full object-cover"
-                                    muted
-                                    loop
-                                    playsInline
-                                    autoPlay
-                                    onLoadedData={() => markLoaded(cell.item.url)}
-                                />
-                            ) : (
-                                <Image
-                                    src={cell.item.url}
-                                    alt=""
-                                    width={cell.width}
-                                    height={cell.height}
-                                    sizes="(max-width: 768px) 50vw, 33vw"
-                                    className="block h-full w-full object-cover"
-                                    priority={ci < 3}
-                                    onLoad={() => markLoaded(cell.item.url)}
-                                />
-                            )}
+                            <div
+                                className="relative overflow-hidden rounded-xl cursor-pointer"
+                                style={{ width: `${cell.width}px`, height: `${cell.height}px` }}
+                                data-item-id={cell.id}
+                                onClick={(e) => handleImageClick(e, cell)}
+                            >
+                                {cell.item.type === "video" ? (
+                                    <video
+                                        src={cell.item.url}
+                                        className="block h-full w-full object-cover"
+                                        muted
+                                        loop
+                                        playsInline
+                                        autoPlay
+                                        onLoadedData={() => markLoaded(cell.item.url)}
+                                    />
+                                ) : (
+                                    <Image
+                                        src={cell.item.url}
+                                        alt=""
+                                        width={cell.width}
+                                        height={cell.height}
+                                        sizes="(max-width: 768px) 50vw, 33vw"
+                                        className="block h-full w-full object-cover"
+                                        priority={ci < 3}
+                                        onLoad={() => markLoaded(cell.item.url)}
+                                    />
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
+
+                {/* Click-catcher behind the opened image. Transparent so the page
+                    colour shows through as the other images fade out; add a
+                    background here if you want a dimmed backdrop. */}
+                {active && (
+                    <div
+                        className="fixed inset-0 z-40"
+                        style={{ cursor: "zoom-out" }}
+                        onClick={closeLightbox}
+                    />
+                )}
             </div>
         </div>
     );

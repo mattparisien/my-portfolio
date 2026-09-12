@@ -1,5 +1,10 @@
 import { config } from "dotenv";
-import { CopyObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+    CopyObjectCommand,
+    HeadObjectCommand,
+    ListObjectsV2Command,
+    S3Client,
+} from "@aws-sdk/client-s3";
 
 config({ path: ".env" });
 
@@ -16,8 +21,17 @@ const r2 = new S3Client({
     },
 });
 
+// This list is the SOURCE OF TRUTH for which images are featured.
+// - Any image in this list gets isfeatured = "true".
+// - Any image in the bucket that currently has the flag but is NOT in this
+//   list gets the flag removed.
 const FEATURED_IMAGE_URLS = [
-    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/DSC_7474-Edit-2.jpg"
+    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/DSC_7474-Edit-2.jpg",
+    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/fff185fbe408ea192718d81d08dcb6404cdbb6c0-1440x1799.jpeg",
+    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/e23381b7bee42d213bd942a653836d4b695b6cc1-1440x1792 (1).jpeg",
+    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/C45B7160-C62C-4C69-95BD-01FCAAD8F313_1_zyf0ub.mov"
+
+
 
     // Add additional image URLs here.
 ] as const;
@@ -66,33 +80,66 @@ function encodeCopySourceKey(key: string): string {
         .join("/");
 }
 
-function buildMetadata(existingMetadata: Record<string, string> | undefined) {
+// Rebuild the metadata map, preserving everything except the featured flag,
+// then set or remove that flag based on `featured`.
+function buildMetadata(
+    existingMetadata: Record<string, string> | undefined,
+    featured: boolean
+) {
     const metadata: Record<string, string> = { ...existingMetadata };
 
     for (const key of Object.keys(metadata)) {
+        // strip empties
         if (metadata[key] === undefined || metadata[key] === null || metadata[key] === "") {
+            delete metadata[key];
+            continue;
+        }
+        // strip any existing featured flag (case-insensitive, just in case)
+        if (key.toLowerCase() === FEATURED_METADATA_KEY) {
             delete metadata[key];
         }
     }
 
-    metadata[FEATURED_METADATA_KEY] = "true";
+    if (featured) {
+        metadata[FEATURED_METADATA_KEY] = "true";
+    }
 
     return metadata;
 }
 
-async function markFeatured(key: string) {
-    const result = await r2.send(
-        new HeadObjectCommand({
-            Bucket: BUCKET,
-            Key: key,
-        })
-    );
+// List every object under the folder, handling pagination.
+async function listAllKeys(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
 
-    // if (result.Metadata?.[FEATURED_METADATA_KEY] === "true") {
-    //     console.log(`Skipping ${key} (already featured)`);
-    //     return;
-    // }
+    do {
+        const result = await r2.send(
+            new ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: prefix,
+                ContinuationToken: continuationToken,
+            })
+        );
 
+        for (const obj of result.Contents ?? []) {
+            // skip folder placeholder objects
+            if (obj.Key && !obj.Key.endsWith("/")) {
+                keys.push(obj.Key);
+            }
+        }
+
+        continuationToken = result.NextContinuationToken;
+    } while (continuationToken);
+
+    return keys;
+}
+
+// Write the featured flag on/off via an in-place self-copy.
+async function setFeatured(
+    key: string,
+    featured: boolean,
+    existingMetadata: Record<string, string> | undefined
+) {
     const encodedKey = encodeCopySourceKey(key);
 
     await r2.send(
@@ -100,12 +147,18 @@ async function markFeatured(key: string) {
             Bucket: BUCKET,
             CopySource: `${BUCKET}/${encodedKey}`,
             Key: key,
-            Metadata: buildMetadata(result.Metadata),
+            Metadata: buildMetadata(existingMetadata, featured),
             MetadataDirective: "REPLACE",
         })
     );
+}
 
-    console.log(`Marked featured: ${key}`);
+// Simple concurrency-limited batch runner.
+async function runInBatches<T>(items: T[], batchSize: number, fn: (item: T) => Promise<void>) {
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        await Promise.all(batch.map(fn));
+    }
 }
 
 async function main() {
@@ -115,25 +168,61 @@ async function main() {
         );
     }
 
-    const urls = FEATURED_IMAGE_URLS.filter((url) => url && url.trim().length > 0);
+    // Desired featured set (source of truth).
+    const desiredKeys = new Set(
+        FEATURED_IMAGE_URLS.filter((url) => url && url.trim().length > 0).map((url) =>
+            normalizeKey(url)
+        )
+    );
 
-    if (urls.length === 0) {
-        throw new Error("FEATURED_IMAGE_URLS is empty. Add the image URLs you want to mark as featured.");
+    if (desiredKeys.size === 0) {
+        console.warn(
+            "FEATURED_IMAGE_URLS is empty — this will REMOVE the featured flag from every image in the folder."
+        );
     }
 
-    console.log(`Marking ${urls.length} image(s) as featured...`);
+    const allKeys = await listAllKeys(`${FOLDER}/`);
+    console.log(`Reconciling ${allKeys.length} object(s) against ${desiredKeys.size} featured image(s)...`);
 
-    for (const url of urls) {
-        const key = normalizeKey(url);
+    const foundDesired = new Set<string>();
+    let added = 0;
+    let removed = 0;
+    let unchanged = 0;
 
+    await runInBatches(allKeys, 8, async (key) => {
         try {
-            await markFeatured(key);
+            const head = await r2.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+            const currentlyFeatured = head.Metadata?.[FEATURED_METADATA_KEY] === "true";
+            const shouldBeFeatured = desiredKeys.has(key);
+
+            if (shouldBeFeatured) {
+                foundDesired.add(key);
+            }
+
+            if (shouldBeFeatured && !currentlyFeatured) {
+                await setFeatured(key, true, head.Metadata);
+                added++;
+                console.log(`+ Marked featured: ${key}`);
+            } else if (!shouldBeFeatured && currentlyFeatured) {
+                await setFeatured(key, false, head.Metadata);
+                removed++;
+                console.log(`- Removed featured flag: ${key}`);
+            } else {
+                unchanged++;
+            }
         } catch (error) {
-            console.error(`Failed to mark ${url}:`, error);
+            console.error(`Failed on ${key}:`, error);
+        }
+    });
+
+    // Warn about URLs in the list that don't correspond to a real object.
+    for (const key of desiredKeys) {
+        if (!foundDesired.has(key)) {
+            console.warn(`! Listed as featured but not found in bucket: ${key}`);
         }
     }
 
-    console.log("Done.");
+    console.log(`Done. Added: ${added}, Removed: ${removed}, Unchanged: ${unchanged}.`);
 }
 
 main().catch((error) => {
