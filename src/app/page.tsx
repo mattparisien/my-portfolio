@@ -49,7 +49,7 @@ export default function Home() {
 
         const orderedMedia = [
           ...featuredItems,
-          ...shuffle(nonFeaturedItems, 13),
+          ...shuffle(nonFeaturedItems, 3),
         ] as MediaGridItem[];
 
         setMedia(orderedMedia);
