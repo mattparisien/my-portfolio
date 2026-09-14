@@ -6,12 +6,13 @@ import classNames from "classnames";
 interface LightboxProps {
     items: MediaGridItem[];
     isActive: boolean;
+    activeIndex?: number;
     onClose: () => void;
 }
 
 // Defers mounting its <Image> until the placeholder is actually near the viewport,
 // so an open lightbox doesn't fire off a full-res fetch for every item at once.
-const ThumbnailCell = ({ item }: { item: MediaGridItem }) => {
+const ThumbnailCell = ({ item, isActive }: { item: MediaGridItem; isActive: boolean }) => {
     const ref = useRef<HTMLDivElement>(null);
     const [visible, setVisible] = useState(false);
 
@@ -28,8 +29,20 @@ const ThumbnailCell = ({ item }: { item: MediaGridItem }) => {
         return () => observer.disconnect();
     }, [visible]);
 
+    useEffect(() => {
+        if (isActive && ref.current) {
+            ref.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+    }, [isActive]);
+
     return (
-        <div ref={ref} className="w-16 h-16 rounded-sm m-1 bg-gray-300 relative overflow-hidden opacity-50">
+        <div
+            ref={ref}
+            className={classNames(
+                "w-16 h-16 rounded-sm m-1 bg-gray-300 relative overflow-hidden transition-opacity duration-150",
+                isActive ? "opacity-100" : "opacity-30"
+            )}
+        >
             {visible && (
                 <Image
                     src={item.url}
@@ -64,9 +77,13 @@ const Lightbox = (props: LightboxProps) => {
                 {/* Square thumbnail band - only mount once the lightbox has actually opened,
                     and let next/image downscale the source instead of fetching full-res files */}
                 {props.isActive && (
-                    <div className="flex flex-col absolute left-0 top-0">
+                    <div className="flex flex-col absolute left-0 top-0 max-h-full overflow-y-auto no-scrollbar">
                         {props.items.map((item, i) => (
-                            <ThumbnailCell key={i} item={item} />
+                            <ThumbnailCell
+                                key={i}
+                                item={item}
+                                isActive={i === props.activeIndex}
+                            />
                         ))}
                     </div>
                 )}

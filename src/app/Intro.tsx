@@ -104,9 +104,6 @@ const Intro = (props: IntroProps) => {
     // lightbox can drive them.
     const [introDone, setIntroDone] = useState(!IS_INTRO_ENABLED);
     const [active, setActive] = useState<ActiveLightbox | null>(null);
-    // The cell that was active right before a nav swap, kept frozen at its
-    // centered position while it fades out (rather than snapping back to its grid slot).
-    const [navPrev, setNavPrev] = useState<ActiveLightbox | null>(null);
 
     const introItems = useMemo(() => items.slice(0, 5), [items]);
     const { isReady, markLoaded } = useMediaReady(introItems);
@@ -218,7 +215,7 @@ const Intro = (props: IntroProps) => {
        Lightbox open / close / navigate
     -------------------------------- */
     // Shared by clicks and arrow-key navigation so both compute the same transform.
-    const openCell = useCallback((cell: LaidOutCell, index: number, isNavigating: boolean, previous: ActiveLightbox | null) => {
+    const openCell = useCallback((cell: LaidOutCell, index: number, isNavigating: boolean) => {
         const wrapper = containerRef.current?.querySelector<HTMLElement>(
             `[data-item-id="${cell.id}"]`
         )?.parentElement;
@@ -238,7 +235,6 @@ const Intro = (props: IntroProps) => {
         );
 
         document.querySelector("main")?.classList.add('overflow-hidden');
-        setNavPrev(isNavigating ? previous : null);
         setActive({
             id: cell.id,
             index,
@@ -256,18 +252,16 @@ const Intro = (props: IntroProps) => {
             // clicking the already-open image closes it
             if (active?.id === cell.id) {
                 document.querySelector("main")?.classList.remove("overflow-hidden");
-                setNavPrev(null);
                 setActive(null);
                 return;
             }
 
-            openCell(cell, index, false, null);
+            openCell(cell, index, false);
         },
         [active, openCell]
     );
 
     const closeLightbox = useCallback(() => {
-        setNavPrev(null);
         setActive(null);
     }, []);
 
@@ -281,7 +275,6 @@ const Intro = (props: IntroProps) => {
 
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
-                setNavPrev(null);
                 setActive(null);
                 return;
             }
@@ -292,7 +285,7 @@ const Intro = (props: IntroProps) => {
                 e.preventDefault();
                 const delta = e.key === "ArrowRight" ? 1 : -1;
                 const nextIndex = (active.index + delta + total) % total;
-                openCell(layout.cells[nextIndex], nextIndex, true, active);
+                openCell(layout.cells[nextIndex], nextIndex, true);
             }
         };
         window.addEventListener("keydown", onKey);
@@ -397,27 +390,22 @@ const Intro = (props: IntroProps) => {
                 {layout.cells.map((cell, ci) => {
                     const isActive = active?.id === cell.id;
                     const dimmed = Boolean(active) && !isActive;
-                    // While fading out from a nav swap, stay frozen at the centered
-                    // position it already reached instead of snapping back to its grid slot.
-                    const isFadingFromNav = !isActive && navPrev?.id === cell.id;
 
-                    const gridTransform = `translate3d(${cell.x}px, ${cell.y}px, 0px)`;
                     const transform = isActive
                         ? `translate3d(${active!.tx}px, ${active!.ty}px, 0px) scale(${active!.scale})`
-                        : isFadingFromNav
-                            ? `translate3d(${navPrev!.tx}px, ${navPrev!.ty}px, 0px) scale(${navPrev!.scale})`
-                            : gridTransform;
+                        : `translate3d(${cell.x}px, ${cell.y}px, 0px)`;
 
-                    // Navigating swaps which image is shown without moving anything, so
-                    // only cross-fade opacity — skip the fly-to-center transform animation.
-                    const skipTransformAnim = isFadingFromNav || (isActive && Boolean(active?.isNavigating));
+                    // When navigating between lightbox images, snap immediately with no transition
+                    const transition = active?.isNavigating
+                        ? "none"
+                        : `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`;
 
                     const wrapperStyle: React.CSSProperties = introControlled
                         ? { willChange: "transform" } // GSAP owns transform/opacity
                         : {
                             transform,
                             opacity: dimmed ? 0 : 1,
-                            transition: skipTransformAnim ? OPACITY_TRANSITION : `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
+                            transition,
                             zIndex: isActive ? 50 : 1,
                             pointerEvents: dimmed ? "none" : "auto",
                             willChange: "transform",
@@ -476,6 +464,7 @@ const Intro = (props: IntroProps) => {
                         onClose={closeLightbox}
                         items={items}
                         isActive={active != null}
+                        activeIndex={active?.index}
                     />
                 
             </div>
