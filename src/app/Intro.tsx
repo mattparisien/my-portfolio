@@ -5,6 +5,7 @@ import { MediaGridItem } from "@/components/StickySections/StickySections";
 import { useMediaReady } from "@/app/hooks/useMediaReady";
 import { useWindowWidth } from "@/app/hooks/useWindowWidth";
 import gsap from "gsap";
+import Lightbox from "./Lightbox";
 
 interface IntroProps {
     items: MediaGridItem[]
@@ -16,7 +17,7 @@ const IS_INTRO_ENABLED = true;
    Layout tuning knobs
 -------------------------------- */
 const SIDE_PADDING_PCT = 0.02;   // small gutter on each side (fraction of viewport width)
-const TOP_PADDING_PCT = 0.08;    // empty space above first row
+const TOP_PADDING_PCT = 0;       // no extra empty space above the first row
 const ROW_GAP_PCT = 0.045;       // vertical gap between rows (fraction of viewport width)
 const SLOT_FILL = 0.84;          // how much of its horizontal slot an item targets
 const SIZE_JITTER = 0.16;        // ± random size variation per item
@@ -195,13 +196,14 @@ const Intro = (props: IntroProps) => {
             cursorY += localMaxBottom - localMinTop + rowGap;
         });
 
-        if (!cells.some((c) => c.isFeatured)) {
-            cells.forEach((c) => {
-                c.isFeatured = true;
-            });
-        }
+        // Keep the first row aligned to the top without introducing an extra
+        // vertical offset that would shift the grid upward.
+        const yOffset = 0;
+        cells.forEach((c) => {
+            c.y -= yOffset;
+        });
 
-        return { cells, totalHeight: Math.round(cursorY) };
+        return { cells, totalHeight: Math.round(cursorY - yOffset) };
     }, [items, windowWidth]);
 
     /* -----------------------------
@@ -213,6 +215,7 @@ const Intro = (props: IntroProps) => {
 
             // clicking the already-open image closes it
             if (active?.id === cell.id) {
+                document.querySelector("main")?.classList.remove("overflow-hidden");
                 setActive(null);
                 return;
             }
@@ -233,6 +236,7 @@ const Intro = (props: IntroProps) => {
                 (window.innerHeight * LIGHTBOX_MARGIN) / cell.height
             );
 
+            document.querySelector("main")?.classList.add('overflow-hidden');
             setActive({
                 id: cell.id,
                 tx: cell.x + deltaX,
@@ -277,8 +281,23 @@ const Intro = (props: IntroProps) => {
 
         hasPlayedIntro.current = true;
 
-        const featured = nodes.filter((n) => n.dataset.featured === "1");
-        const others = nodes.filter((n) => n.dataset.featured !== "1");
+        // Which items get the fly-in-from-center treatment:
+        //   • if any are flagged featured, use those
+        //   • otherwise, use only the items currently in view (fully or partially
+        //     visible in the viewport at their resting position)
+        let featured = nodes.filter((n) => n.dataset.featured === "1");
+
+        if (featured.length === 0) {
+            const vh = window.innerHeight;
+            featured = nodes.filter((n) => {
+                const y = Number(n.dataset.restY);
+                const h = Number(n.dataset.height);
+                return y < vh && y + h > 0; // vertical overlap with the viewport
+            });
+        }
+
+        const featuredSet = new Set(featured);
+        const others = nodes.filter((n) => !featuredSet.has(n));
 
         const centerX = (el: HTMLElement) => window.innerWidth / 2 - Number(el.dataset.width) / 2;
         const centerY = (el: HTMLElement) => window.innerHeight / 2 - Number(el.dataset.height) / 2;
@@ -317,7 +336,7 @@ const Intro = (props: IntroProps) => {
                     ease: "power3.inOut",
                     stagger: INTRO_FLY_STAGGER,
                 },
-                "+=0.1"
+                "-=0.4"
             );
 
             if (others.length) {
@@ -349,13 +368,13 @@ const Intro = (props: IntroProps) => {
                     const wrapperStyle: React.CSSProperties = introControlled
                         ? { willChange: "transform" } // GSAP owns transform/opacity
                         : {
-                              transform,
-                              opacity: dimmed ? 0 : 1,
-                              transition: `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
-                              zIndex: isActive ? 50 : 1,
-                              pointerEvents: dimmed ? "none" : "auto",
-                              willChange: "transform",
-                          };
+                            transform,
+                            opacity: dimmed ? 0 : 1,
+                            transition: `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
+                            zIndex: isActive ? 50 : 1,
+                            pointerEvents: dimmed ? "none" : "auto",
+                            willChange: "transform",
+                        };
 
                     return (
                         <div
@@ -405,13 +424,13 @@ const Intro = (props: IntroProps) => {
                 {/* Click-catcher behind the opened image. Transparent so the page
                     colour shows through as the other images fade out; add a
                     background here if you want a dimmed backdrop. */}
-                {active && (
-                    <div
-                        className="fixed inset-0 z-40"
-                        style={{ cursor: "zoom-out" }}
-                        onClick={closeLightbox}
+            
+                    <Lightbox
+                        onClose={closeLightbox}
+                        items={items}
+                        isActive={active != null}
                     />
-                )}
+                
             </div>
         </div>
     );

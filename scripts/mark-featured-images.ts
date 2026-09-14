@@ -26,10 +26,6 @@ const r2 = new S3Client({
 // - Any image in the bucket that currently has the flag but is NOT in this
 //   list gets the flag removed.
 const FEATURED_IMAGE_URLS = [
-    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/DSC_7474-Edit-2.jpg",
-    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/fff185fbe408ea192718d81d08dcb6404cdbb6c0-1440x1799.jpeg",
-    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/e23381b7bee42d213bd942a653836d4b695b6cc1-1440x1792 (1).jpeg",
-    "https://pub-30fe8059e35c45f19228bc5cf59ce0a5.r2.dev/portfolio/C45B7160-C62C-4C69-95BD-01FCAAD8F313_1_zyf0ub.mov"
 
 
 

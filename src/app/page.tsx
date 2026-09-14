@@ -1,6 +1,7 @@
 "use client"
 import { MediaGridItem } from '@/components/StickySections/StickySections';
 import { useEffect, useState } from 'react';
+import Logo from "./Logo";
 import Intro from './Intro';
 
 export interface MediaItem {
@@ -37,7 +38,7 @@ export default function Home() {
 
   // Fetch and preload media from Cloudinary folder
   useEffect(() => {
- 
+
     const fetchMedia = async () => {
       try {
         const response = await fetch('/api/cloudinary-images');
@@ -49,7 +50,7 @@ export default function Home() {
 
         const orderedMedia = [
           ...featuredItems,
-          ...shuffle(nonFeaturedItems, 3),
+          ...shuffle(nonFeaturedItems, 151),
         ] as MediaGridItem[];
 
         setMedia(orderedMedia);
@@ -106,6 +107,7 @@ export default function Home() {
           aspectRatio: 683 / 701
         }]} /> */}
         {/* {media.length > 0 && <StickySections items={media} isActive={false} />} */}
+        {/* <Logo /> */}
         {media.length > 0 && <Intro items={media} />}
         {/* <div className="text-[5vw] font-sans fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 font-medium opacity-30">Matthew Parisien</div> */}
       </main >
