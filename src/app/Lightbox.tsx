@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 import { MediaGridItem } from "@/components/StickySections/StickySections";
 import classNames from "classnames";
 
@@ -8,58 +8,82 @@ interface LightboxProps {
     isActive: boolean;
     activeIndex?: number;
     onClose: () => void;
+    onSelectIndex?: (index: number) => void;
 }
 
-// Defers mounting its <Image> until the placeholder is actually near the viewport,
-// so an open lightbox doesn't fire off a full-res fetch for every item at once.
-const ThumbnailCell = ({ item, isActive }: { item: MediaGridItem; isActive: boolean }) => {
-    const ref = useRef<HTMLDivElement>(null);
-    const [visible, setVisible] = useState(false);
+const ITEM_HEIGHT = 72;
+const WINDOW_RADIUS = 25;
 
-    useEffect(() => {
-        if (visible || !ref.current) return;
-
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) setVisible(true);
-            },
-            { rootMargin: "200px" }
-        );
-        observer.observe(ref.current);
-        return () => observer.disconnect();
-    }, [visible]);
-
-    useEffect(() => {
-        if (isActive && ref.current) {
-            ref.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }
-    }, [isActive]);
-
+const ThumbnailCell = ({
+    item,
+    isActive,
+    top,
+    onClick,
+}: {
+    item: MediaGridItem;
+    isActive: boolean;
+    top: number;
+    onClick: () => void;
+}) => {
     return (
         <div
-            ref={ref}
-            className={classNames(
-                "w-16 h-16 rounded-sm m-1 bg-gray-300 relative overflow-hidden transition-opacity duration-150",
-                isActive ? "opacity-100" : "opacity-30"
-            )}
+            style={{ top: `${top}px` }}
+            onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+            }}
+            className="absolute left-0 w-[72px] h-[72px] flex items-center justify-center cursor-pointer"
         >
-            {visible && (
-                <Image
-                    src={item.url}
-                    alt=""
-                    width={64}
-                    height={64}
-                    quality={40}
-                    sizes="64px"
-                    loading="lazy"
-                    className="w-full h-full object-cover"
-                />
-            )}
+            <div
+                className={classNames(
+                    "w-16 h-16 shrink-0 rounded-sm bg-gray-300 relative overflow-hidden transition-all duration-150",
+                    isActive ? "opacity-100 cale-105" : "opacity-30 hover:opacity-75"
+                )}
+            >
+                {item.type === "video" ? (
+                    <video
+                        src={item.url}
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover pointer-events-none"
+                    />
+                ) : (
+                    <Image
+                        src={item.url}
+                        alt=""
+                        width={64}
+                        height={64}
+                        sizes="64px"
+                        loading="lazy"
+                        className="w-full h-full object-cover pointer-events-none"
+                    />
+                )}
+            </div>
         </div>
     );
 };
 
 const Lightbox = (props: LightboxProps) => {
+    const activeIndex = props.activeIndex ?? 0;
+    const total = props.items.length;
+
+    // Build a window of repeated thumbnail entries around the active index
+    // so navigating before the first item or after the last item is seamless and infinite.
+    const visibleThumbnails = useMemo(() => {
+        if (!props.isActive || total === 0) return [];
+        const list = [];
+        for (let k = activeIndex - WINDOW_RADIUS; k <= activeIndex + WINDOW_RADIUS; k++) {
+            const realIndex = ((k % total) + total) % total;
+            list.push({
+                virtualIndex: k,
+                item: props.items[realIndex],
+                isActive: k === activeIndex,
+                top: k * ITEM_HEIGHT,
+            });
+        }
+        return list;
+    }, [props.isActive, props.items, activeIndex, total]);
+
     return (
         <div
             className={
@@ -73,16 +97,23 @@ const Lightbox = (props: LightboxProps) => {
             style={{ cursor: "zoom-out" }}
             onClick={props.onClose}
         >
-            <div className="relative w-full h-full">
-                {/* Square thumbnail band - only mount once the lightbox has actually opened,
-                    and let next/image downscale the source instead of fetching full-res files */}
+            <div className="relative w-full h-full pointer-events-none">
+                {/* Square thumbnail band translated on Y to always center the active thumbnail */}
                 {props.isActive && (
-                    <div className="flex flex-col absolute left-0 top-0 max-h-full overflow-y-auto no-scrollbar">
-                        {props.items.map((item, i) => (
+                    <div
+                        className="absolute left-0 top-0 w-[72px] h-full pointer-events-auto"
+                        style={{
+                            transform: `translate3d(20px, calc(50vh - ${activeIndex * ITEM_HEIGHT + ITEM_HEIGHT / 2}px), 0)`,
+                            transition: "transform 0.35s cubic-bezier(0.22, 1, 0.36, 1)",
+                        }}
+                    >
+                        {visibleThumbnails.map((thumb) => (
                             <ThumbnailCell
-                                key={i}
-                                item={item}
-                                isActive={i === props.activeIndex}
+                                key={thumb.virtualIndex}
+                                item={thumb.item}
+                                isActive={thumb.isActive}
+                                top={thumb.top}
+                                onClick={() => props.onSelectIndex?.(thumb.virtualIndex)}
                             />
                         ))}
                     </div>

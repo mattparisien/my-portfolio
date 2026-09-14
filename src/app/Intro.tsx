@@ -30,6 +30,7 @@ const EDGE_BLEED = 0;            // how far an edge item may hang off the viewpo
 /* -----------------------------
    Lightbox knobs
 -------------------------------- */
+const THUMBNAIL_BAR_WIDTH = 150;  // 64px thumbnail width + 8px horizontal margin
 const LIGHTBOX_MARGIN = 0.9;     // max fraction of the viewport the opened image may occupy
 const LIGHTBOX_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const TRANSFORM_TRANSITION = `transform 0.6s ${LIGHTBOX_EASE}`;
@@ -221,16 +222,19 @@ const Intro = (props: IntroProps) => {
         )?.parentElement;
         if (!wrapper) return;
 
-        // Center on the viewport by nudging the current translate by the delta
-        // between the item's current center and the viewport center.
+        // Center on the area to the right of the thumbnail bar by nudging
+        // the current translate by the delta between the item's current center
+        // and the available content area center.
         const rect = wrapper.getBoundingClientRect();
-        const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
+        const availableWidth = Math.max(0, window.innerWidth - THUMBNAIL_BAR_WIDTH);
+        const targetCenterX = THUMBNAIL_BAR_WIDTH + availableWidth / 2;
+        const deltaX = targetCenterX - (rect.left + rect.width / 2);
         const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
 
-        // Scale up to fill the viewport, but never exceed LIGHTBOX_MARGIN of
-        // either dimension.
+        // Scale up to fill the available space (excluding the thumbnail bar),
+        // but never exceed LIGHTBOX_MARGIN of either dimension.
         const scale = Math.min(
-            (window.innerWidth * LIGHTBOX_MARGIN) / cell.width,
+            (availableWidth * LIGHTBOX_MARGIN) / cell.width,
             (window.innerHeight * LIGHTBOX_MARGIN) / cell.height
         );
 
@@ -265,6 +269,16 @@ const Intro = (props: IntroProps) => {
         setActive(null);
     }, []);
 
+    const handleThumbnailClick = useCallback(
+        (virtualIndex: number) => {
+            const total = layout.cells.length;
+            if (total === 0) return;
+            const realIndex = ((virtualIndex % total) + total) % total;
+            openCell(layout.cells[realIndex], virtualIndex, true);
+        },
+        [layout.cells, openCell]
+    );
+
     // Lock page scroll (including locomotive-scroll) + wire up Escape/arrow keys while open.
     useEffect(() => {
         if (!active) return;
@@ -284,8 +298,9 @@ const Intro = (props: IntroProps) => {
                 if (total === 0) return;
                 e.preventDefault();
                 const delta = e.key === "ArrowRight" ? 1 : -1;
-                const nextIndex = (active.index + delta + total) % total;
-                openCell(layout.cells[nextIndex], nextIndex, true);
+                const nextVirtualIndex = active.index + delta;
+                const nextRealIndex = ((nextVirtualIndex % total) + total) % total;
+                openCell(layout.cells[nextRealIndex], nextVirtualIndex, true);
             }
         };
         window.addEventListener("keydown", onKey);
@@ -465,6 +480,7 @@ const Intro = (props: IntroProps) => {
                         items={items}
                         isActive={active != null}
                         activeIndex={active?.index}
+                        onSelectIndex={handleThumbnailClick}
                     />
                 
             </div>
