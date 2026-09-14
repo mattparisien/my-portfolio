@@ -1,9 +1,10 @@
 'use client'
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MediaGridItem } from "@/components/StickySections/StickySections";
 import { useMediaReady } from "@/app/hooks/useMediaReady";
 import { useWindowWidth } from "@/app/hooks/useWindowWidth";
+import { SmoothScrollContext } from "@/app/contexts/SmoothScroll.context";
 import gsap from "gsap";
 import Lightbox from "./Lightbox";
 
@@ -82,9 +83,12 @@ type LaidOutCell = {
 
 type ActiveLightbox = {
     id: string;
+    index: number;
     tx: number;
     ty: number;
     scale: number;
+    // true when this state resulted from arrow-key navigation rather than opening/closing
+    isNavigating: boolean;
 };
 
 const Intro = (props: IntroProps) => {
@@ -93,12 +97,16 @@ const Intro = (props: IntroProps) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const hasPlayedIntro = useRef(false);
     const windowWidth = useWindowWidth();
+    const { scroll } = useContext(SmoothScrollContext) as { scroll: { stop: () => void; start: () => void } | null };
 
     // When the intro is enabled, GSAP owns the transforms until it finishes;
     // after that (or immediately, if disabled) React/CSS take over so the
     // lightbox can drive them.
     const [introDone, setIntroDone] = useState(!IS_INTRO_ENABLED);
     const [active, setActive] = useState<ActiveLightbox | null>(null);
+    // The cell that was active right before a nav swap, kept frozen at its
+    // centered position while it fades out (rather than snapping back to its grid slot).
+    const [navPrev, setNavPrev] = useState<ActiveLightbox | null>(null);
 
     const introItems = useMemo(() => items.slice(0, 5), [items]);
     const { isReady, markLoaded } = useMediaReady(introItems);
@@ -207,65 +215,94 @@ const Intro = (props: IntroProps) => {
     }, [items, windowWidth]);
 
     /* -----------------------------
-       Lightbox open / close
+       Lightbox open / close / navigate
     -------------------------------- */
+    // Shared by clicks and arrow-key navigation so both compute the same transform.
+    const openCell = useCallback((cell: LaidOutCell, index: number, isNavigating: boolean, previous: ActiveLightbox | null) => {
+        const wrapper = containerRef.current?.querySelector<HTMLElement>(
+            `[data-item-id="${cell.id}"]`
+        )?.parentElement;
+        if (!wrapper) return;
+
+        // Center on the viewport by nudging the current translate by the delta
+        // between the item's current center and the viewport center.
+        const rect = wrapper.getBoundingClientRect();
+        const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
+        const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
+
+        // Scale up to fill the viewport, but never exceed LIGHTBOX_MARGIN of
+        // either dimension.
+        const scale = Math.min(
+            (window.innerWidth * LIGHTBOX_MARGIN) / cell.width,
+            (window.innerHeight * LIGHTBOX_MARGIN) / cell.height
+        );
+
+        document.querySelector("main")?.classList.add('overflow-hidden');
+        setNavPrev(isNavigating ? previous : null);
+        setActive({
+            id: cell.id,
+            index,
+            tx: cell.x + deltaX,
+            ty: cell.y + deltaY,
+            scale,
+            isNavigating,
+        });
+    }, []);
+
     const handleImageClick = useCallback(
-        (e: React.MouseEvent<HTMLDivElement>, cell: LaidOutCell) => {
+        (e: React.MouseEvent<HTMLDivElement>, cell: LaidOutCell, index: number) => {
             e.stopPropagation();
 
             // clicking the already-open image closes it
             if (active?.id === cell.id) {
                 document.querySelector("main")?.classList.remove("overflow-hidden");
+                setNavPrev(null);
                 setActive(null);
                 return;
             }
 
-            const wrapper = e.currentTarget.parentElement as HTMLElement | null;
-            if (!wrapper) return;
-
-            // Center on the viewport by nudging the current translate by the delta
-            // between the item's current center and the viewport center.
-            const rect = wrapper.getBoundingClientRect();
-            const deltaX = window.innerWidth / 2 - (rect.left + rect.width / 2);
-            const deltaY = window.innerHeight / 2 - (rect.top + rect.height / 2);
-
-            // Scale up to fill the viewport, but never exceed LIGHTBOX_MARGIN of
-            // either dimension.
-            const scale = Math.min(
-                (window.innerWidth * LIGHTBOX_MARGIN) / cell.width,
-                (window.innerHeight * LIGHTBOX_MARGIN) / cell.height
-            );
-
-            document.querySelector("main")?.classList.add('overflow-hidden');
-            setActive({
-                id: cell.id,
-                tx: cell.x + deltaX,
-                ty: cell.y + deltaY,
-                scale,
-            });
+            openCell(cell, index, false, null);
         },
-        [active]
+        [active, openCell]
     );
 
-    const closeLightbox = useCallback(() => setActive(null), []);
+    const closeLightbox = useCallback(() => {
+        setNavPrev(null);
+        setActive(null);
+    }, []);
 
-    // Lock page scroll + close on Escape while a lightbox is open.
+    // Lock page scroll (including locomotive-scroll) + wire up Escape/arrow keys while open.
     useEffect(() => {
         if (!active) return;
 
+        scroll?.stop();
         const prevOverflow = document.body.style.overflow;
         document.body.style.overflow = "hidden";
 
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setActive(null);
+            if (e.key === "Escape") {
+                setNavPrev(null);
+                setActive(null);
+                return;
+            }
+
+            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                const total = layout.cells.length;
+                if (total === 0) return;
+                e.preventDefault();
+                const delta = e.key === "ArrowRight" ? 1 : -1;
+                const nextIndex = (active.index + delta + total) % total;
+                openCell(layout.cells[nextIndex], nextIndex, true, active);
+            }
         };
         window.addEventListener("keydown", onKey);
 
         return () => {
             document.body.style.overflow = prevOverflow;
+            scroll?.start();
             window.removeEventListener("keydown", onKey);
         };
-    }, [active]);
+    }, [active, layout.cells, openCell, scroll]);
 
     /* -----------------------------
        Intro sequence (only when IS_INTRO_ENABLED)
@@ -360,17 +397,27 @@ const Intro = (props: IntroProps) => {
                 {layout.cells.map((cell, ci) => {
                     const isActive = active?.id === cell.id;
                     const dimmed = Boolean(active) && !isActive;
+                    // While fading out from a nav swap, stay frozen at the centered
+                    // position it already reached instead of snapping back to its grid slot.
+                    const isFadingFromNav = !isActive && navPrev?.id === cell.id;
 
+                    const gridTransform = `translate3d(${cell.x}px, ${cell.y}px, 0px)`;
                     const transform = isActive
                         ? `translate3d(${active!.tx}px, ${active!.ty}px, 0px) scale(${active!.scale})`
-                        : `translate3d(${cell.x}px, ${cell.y}px, 0px)`;
+                        : isFadingFromNav
+                            ? `translate3d(${navPrev!.tx}px, ${navPrev!.ty}px, 0px) scale(${navPrev!.scale})`
+                            : gridTransform;
+
+                    // Navigating swaps which image is shown without moving anything, so
+                    // only cross-fade opacity — skip the fly-to-center transform animation.
+                    const skipTransformAnim = isFadingFromNav || (isActive && Boolean(active?.isNavigating));
 
                     const wrapperStyle: React.CSSProperties = introControlled
                         ? { willChange: "transform" } // GSAP owns transform/opacity
                         : {
                             transform,
                             opacity: dimmed ? 0 : 1,
-                            transition: `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
+                            transition: skipTransformAnim ? OPACITY_TRANSITION : `${TRANSFORM_TRANSITION}, ${OPACITY_TRANSITION}`,
                             zIndex: isActive ? 50 : 1,
                             pointerEvents: dimmed ? "none" : "auto",
                             willChange: "transform",
@@ -392,7 +439,7 @@ const Intro = (props: IntroProps) => {
                                 className="relative overflow-hidden rounded-xl cursor-pointer"
                                 style={{ width: `${cell.width}px`, height: `${cell.height}px` }}
                                 data-item-id={cell.id}
-                                onClick={(e) => handleImageClick(e, cell)}
+                                onClick={(e) => handleImageClick(e, cell, ci)}
                             >
                                 {cell.item.type === "video" ? (
                                     <video
