@@ -18,8 +18,8 @@ const IS_INTRO_ENABLED = true;
    Layout tuning knobs
 -------------------------------- */
 const SIDE_PADDING_PCT = 0.02;   // small gutter on each side (fraction of viewport width)
-const TOP_PADDING_PCT = 0;       // no extra empty space above the first row
 const ROW_GAP_PCT = 0.045;       // vertical gap between rows (fraction of viewport width)
+const TOP_PADDING_PCT = -ROW_GAP_PCT; // push the first row up, off the top of the page
 const SLOT_FILL = 0.84;          // how much of its horizontal slot an item targets
 const SIZE_JITTER = 0.16;        // ± random size variation per item
 const MAX_ITEM_PCT = 0.42;       // hard cap on any single item's size
@@ -426,6 +426,10 @@ const Intro = (props: IntroProps) => {
                             willChange: "transform",
                         };
 
+                    const borderRadius = isActive
+                        ? `${12 / active!.scale}px`
+                        : "12px";
+
                     return (
                         <div
                             key={cell.id}
@@ -439,8 +443,13 @@ const Intro = (props: IntroProps) => {
                             style={wrapperStyle}
                         >
                             <div
-                                className="relative overflow-hidden rounded-xl cursor-pointer"
-                                style={{ width: `${cell.width}px`, height: `${cell.height}px` }}
+                                className="relative overflow-hidden cursor-pointer"
+                                style={{
+                                    width: `${cell.width}px`,
+                                    height: `${cell.height}px`,
+                                    borderRadius,
+                                    transition: active?.isNavigating ? "none" : `border-radius 0.6s ${LIGHTBOX_EASE}`,
+                                }}
                                 data-item-id={cell.id}
                                 onClick={(e) => handleImageClick(e, cell, ci)}
                             >
